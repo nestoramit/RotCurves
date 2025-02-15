@@ -816,7 +816,7 @@ def cornerplot_labels(switches, add_f=True):
                 labels.append(r"$log M_{baryon}$")
             elif switch == "M_vir":
                 if switches["use Moster"]:
-                    labels.append(r"$M_{vir}^{(Moster13)} [10^{11}]$")
+                    labels.append(r"$\log {M_{vir}^{SMHM}}$")
                 else:
                     labels.append(r"$log M_{vir}$")
             elif switch == "R_peak":
@@ -891,10 +891,14 @@ def plot_mcmcCornerplot(samples_with_f, results_table, galaxy, show_plot=False, 
 
     bestfit_medians = [results_table['median'].loc[x] for x in on_switches]
     bestfit_maps = [results_table['MAP'].loc[x] for x in on_switches]
+
     # medians = [bestfit_params_medians[x] for x in bestfit_params_medians if x in on_switches]
     if galaxy.switches['fractions']:
         bestfit_medians.append(results_table['median'].loc['f'])
         bestfit_maps.append(results_table['MAP'].loc['f'])
+
+    print(bestfit_medians)
+    print(bestfit_maps)
 
     fig = corner.corner(np.array(samples_with_f), labels=labels, label_kwargs={'fontsize': 16},
                         bins=20, quantiles=(0.16, 0.5, 0.84),
