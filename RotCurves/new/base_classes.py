@@ -12,7 +12,8 @@ from base_utils import integrate_quad_list, solve_numerical_using_brentq
 G_CONST = c.G.to('kpc km2 / (s2 Msun)').value
 
 class SurfaceDensityProfile:
-    def __init__(self, mass, effective_radius=None, scale_radius=None, surface_density_function=None, q0=0., mass_to_light=1.):
+    def __init__(self, mass, effective_radius=None, scale_radius=None, surface_density_function=None,
+                 q0=0., mass_to_light=1.):
         self.mass = mass
         self.effective_radius = effective_radius
         self.scale_radius = scale_radius
@@ -21,7 +22,7 @@ class SurfaceDensityProfile:
 
         # Set the default surface density function to an exponential "Freeman Disk" if not provided (e.g., Freeman+1970)
         if surface_density_function is None:
-            self.surface_density_function = self.default_surface_density_function
+            self.surface_density_function = self._default_surface_density_function
         else:
             self.surface_density_function = surface_density_function
 
@@ -29,9 +30,9 @@ class SurfaceDensityProfile:
         if self.effective_radius is not None and self.scale_radius is not None:
             warnings.warn("Both effective_radius and scale_radius are given. Using scale_radius.", UserWarning)
         elif self.scale_radius is None and self.effective_radius is not None:
-            self.scale_radius = self.calculate_scale_radius_from_effective()
+            self.scale_radius = self._calculate_scale_radius_from_effective()
         elif self.effective_radius is None and self.scale_radius is not None:
-            self.effective_radius = self.calculate_effective_radius_from_scale()
+            self.effective_radius = self._calculate_effective_radius_from_scale()
         else:
             raise ValueError("Either scale_radius or effective_radius must be provided.")
 
@@ -39,23 +40,24 @@ class SurfaceDensityProfile:
         self.scale_mass = self.scale_mass()
         self.scale_velocity = self.scale_velocity()
 
-    def default_surface_density_function(self, r):
+    def _default_surface_density_function(self, r):
         # Default exponential Freeman Disk surface density profile
-        x = self.calculate_normalized_radius(r)
+        x = self._calculate_normalized_radius(r)
         return np.exp(-x)
 
-    def calculate_normalized_radius(self, r):
+    def _calculate_normalized_radius(self, r):
         # Normalized radius x = r / scale_radius
-        return r / self.scale_radius
+        return np.abs(r) / self.scale_radius
 
-    def calculate_scale_radius_from_effective(self):
+    def _calculate_scale_radius_from_effective(self):
         # Placeholder formula to convert effective radius to scale radius
         func = lambda r_s: self.menc_dimless(self.effective_radius / r_s) - 0.5 * self.menc_dimless(np.inf)
         return solve_numerical_using_brentq(func, p0=self.effective_radius)
 
-    def calculate_effective_radius_from_scale(self):
+    def _calculate_effective_radius_from_scale(self):
         # Placeholder formula to convert scale radius to effective radius
         func = lambda r_eff: self.menc_dimless(r_eff / self.scale_radius) - 0.5 * self.menc_dimless(np.inf)
+        # func = lambda r_eff: self.menc_dimless(r_eff / self.scale_radius) - 0.5 * self.menc_dimless(3*self.scale_radius)
         return solve_numerical_using_brentq(func, p0=self.scale_radius)
 
     def scale_density(self):
@@ -74,7 +76,7 @@ class SurfaceDensityProfile:
         return self.surface_density_function(x)
 
     def surface_density(self, r):
-        x = self.calculate_normalized_radius(r)
+        x = self._calculate_normalized_radius(r)
         return self.surface_density_dimless(x) * self.scale_density
 
     def menc_dimless(self, x):
@@ -83,7 +85,7 @@ class SurfaceDensityProfile:
         return mass
 
     def menc(self, r):
-        x = self.calculate_normalized_radius(r)
+        x = self._calculate_normalized_radius(r)
         return self.menc_dimless(x) * self.scale_mass
 
     # def circular_velocity_dimless(self, x):
@@ -114,20 +116,34 @@ class SurfaceDensityProfile:
         return np.divide(self.menc_dimless(x), x, out=np.zeros_like(x), where=x!=0)
 
     def vcirc2(self, r):
-        x = self.calculate_normalized_radius(r)
+        x = self._calculate_normalized_radius(r)
         return self.vcirc2_dimless(x) * self.scale_velocity**2
 
     def vcirc_dimless(self, x):
-        return np.sqrt(self.vcirc2_dimless(x))
+        """
+        Calculate the circular velocity for an array of dimensionless radii `x`.
+        Negative vcirc2 values are set to zero to avoid NaNs.
+        """
+
+        return np.sqrt(np.clip(self.vcirc2_dimless(x), 0, None))
+
 
     def vcirc(self, r):
-        x = self.calculate_normalized_radius(r)
+        x = self._calculate_normalized_radius(r)
         return self.vcirc_dimless(x) * self.scale_velocity
 
     def light_profile(self, r):
-        x = self.calculate_normalized_radius(r)
-        return self.mass_to_light * self.surf
-        ace_density_dimless(x)
+        x = self._calculate_normalized_radius(r)
+        return self.mass_to_light * self.surface_density_dimless(x)
+
+    def dlnrho_dlnr(self, r):
+        """
+        Calculate the logarithmic density slope at radius r.
+        Used in calculations of the pressure support (e.g., Burkert+2010)
+        """
+        x = self._calculate_normalized_radius(r)
+        dlnrho_dlnr = np.gradient(np.log(self.surface_density_dimless(x)), np.log(x))
+        return dlnrho_dlnr
 
 if __name__ == '__main__':
     import matplotlib.pyplot as plt

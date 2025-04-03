@@ -7,8 +7,6 @@ import matplotlib.pyplot as plt
 from concurrent.futures import ThreadPoolExecutor
 from time import time_ns
 
-from rotationcurves.models.helper_functions import interpolate_1D_data
-
 
 def integrate_quad_list(func, a, b):
     """
