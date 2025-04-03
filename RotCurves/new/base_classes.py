@@ -125,8 +125,7 @@ class SurfaceDensityProfile:
         Negative vcirc2 values are set to zero to avoid NaNs.
         """
 
-        return np.sqrt(np.clip(self.vcirc2_dimless(x), 0, None))
-
+        return np.sqrt(np.maximum(self.vcirc2_dimless(x), 0))
 
     def vcirc(self, r):
         x = self._calculate_normalized_radius(r)

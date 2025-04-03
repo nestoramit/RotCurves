@@ -3,10 +3,12 @@ import numpy as np
 import logging
 from scipy.special import gamma, gammainc, gammaincinv, i0, k0, i1, k1
 from scipy.interpolate import CubicSpline
+from scipy.integrate import quad
 import astropy.constants as c
 import astropy.units as u
 import matplotlib.pyplot as plt
 
+from RotCurves.new.base_utils import integrate_quad_list
 from RotCurves.utils import load_gaussian_tables, M_solar
 from base_classes import SurfaceDensityProfile
 
@@ -216,7 +218,8 @@ class FreemanDisk(SurfaceDensityProfile):
 
 
 class GaussianRingProfile(SurfaceDensityProfile):
-    def __init__(self, mass, scale_radius=None, h=None, FWHM_ring=None, sigma_ring=None, mass_to_light=1.):
+    def __init__(self, mass, scale_radius=None, h=None, FWHM_ring=None, sigma_ring=None, mass_to_light=1.,
+                 lookup=True):
         """
         Initializes a GaussianRing instance, inheriting from SurfaceDensityProfile and modifying
         the enclosed mass calculation.
@@ -235,6 +238,7 @@ class GaussianRingProfile(SurfaceDensityProfile):
         # the other two can be calculated
         if scale_radius is None and h is None:
             raise ValueError("Either scale_radius or h must be provided.")
+
         class _ParameterSolver:
             def __init__(self):
                 # Map of combinations to calculation functions
@@ -316,6 +320,7 @@ class GaussianRingProfile(SurfaceDensityProfile):
 
         # load lookuptables
         # TODO: update path
+        self.lookup = lookup
         self.integral_results = GaussianRingLookupTables[self._closest_h_table()]
 
     def surface_density_function(self, x):
@@ -329,7 +334,7 @@ class GaussianRingProfile(SurfaceDensityProfile):
 
     def scale_density(self):
         A = self.A
-        corr = 1/(2*A) * (np.exp(-A) + np.sqrt(np.pi*A) + np.sqrt(A)*gammainc(0.5, A)*gamma(0.5))
+        corr = 1 / (2 * A) * (np.exp(-A) + np.sqrt(np.pi * A) * (1 + gammainc(0.5, A)))
         return self.mass / (2 * np.pi * self.scale_radius**2) / corr
 
     def scale_mass(self):
@@ -370,13 +375,21 @@ class GaussianRingProfile(SurfaceDensityProfile):
         Taken from the lookuptables under "/lookup_tables/GaussianRing_lookup_tables"
         """
 
-        interpolator = CubicSpline(x=self.integral_results[:, 0], y=self.integral_results[:, 1])
+        if self.lookup:
+            # Use the lookup table for the Gaussian ring
+            # TODO: something is wrong with the lookup table, it is not working. calculate it again.
+            interpolator = CubicSpline(x=self.integral_results[:, 0], y=self.integral_results[:, 1])
+            v2 = interpolator(x)
 
-        v2 = interpolator(x)
+        else:
+            Iprime = lambda t: quad(lambda s: t * (s**2 - t**2)**-0.5 * (1-s) * self.surface_density_dimless(s), t, np.inf)[0]
+            func = lambda x: quad(lambda t: -Iprime(t) * t * (x**2 - t**2)**-0.5, 0, x)[0]
+            v2 = [func(xi) for xi in x]
+            v2 = np.asarray(v2)
 
         # TODO: the constant C should be included in the tables and removed from here
-        C = 1.
-        # C = (np.pi/2)**-4
+        # C = 1.
+        C = 4 * self.A / np.pi
         return C * v2
 
     def dlnrho_dlnr(self, r):
@@ -408,16 +421,17 @@ def test_freeman_sersic():
 if __name__ == '__main__':
     from rotationcurves.models.models import GaussianRingObject
 
-    M = 1e11
+    M = 1e10
     Rpeak = 5.
     h = 1.
     kpc = c.kpc.to(u.m).value
     M_solar = c.M_sun.to(u.kg).value  # kg
     G = c.G.to(u.m ** 3 / u.kg / u.s ** 2).value  # m^3 kg^-1 s^-2
 
-    r = np.linspace(0, 5*Rpeak, num=100)
+    r = np.linspace(0, 10*Rpeak, num=100)
 
-    ring_new = GaussianRingProfile(mass=M, scale_radius=Rpeak, h=h)
+    freeman = FreemanDisk(mass=M, scale_radius=Rpeak)
+    ring_new = GaussianRingProfile(mass=M, scale_radius=Rpeak, h=h, lookup=False)
     ring_old = GaussianRingObject(mass=M, rpeak=Rpeak, ring_FWHM=Rpeak/h, use_lookuptable=True)
     ring_old.get_profiles(r)
     ring_old.get_RC(r)
@@ -426,8 +440,9 @@ if __name__ == '__main__':
     axes[0].plot(r, ring_new.surface_density(r), label="Surface Density")
     axes[0].plot(r, ring_old.density_profile, ls='--', label="Surface Density old")
     axes[1].plot(r, ring_new.menc(r), label="Enclosed Mass")
-    axes[1].plot(r, ring_old.mass_profile, ls='--', label="Enclosed Mass old")
+    axes[1].plot(r, ring_old.mass_profile*ring_old.mass/ring_old.M0, ls='--', label="Enclosed Mass old")
     axes[2].plot(r, ring_new.vcirc(r), label="Circular Velocity")
-    axes[2].plot(r, ring_old.V/np.sqrt(G)*1e-3, label="Circular Velocity old")
+    axes[2].plot(r, ring_old.V/np.sqrt(G)*1e-3, ls='--', label="Circular Velocity old")
+    axes[2].plot(r, freeman.vcirc(r), ls='-.', label="Freeman Disk")
     plt.legend()
     plt.show()
