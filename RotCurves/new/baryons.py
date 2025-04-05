@@ -87,7 +87,7 @@ class SersicProfile(SurfaceDensityProfile):
         """
         The surface density follows a Sersic law (Sérsic+1968):
         Σ(r) = Σ0 * exp[-x^(1/n)]
-        for x = r / scale_radius.
+        for x = r / r_s.
         """
 
         return np.exp(-x ** (1 / self.n))
@@ -173,7 +173,7 @@ class FreemanDisk(SurfaceDensityProfile):
         """
         The surface density follows an Exponential law (Freeman+1970):
         Σ(r) = Σ0 * exp[-x]
-        for x = r / scale_radius.
+        for x = r / r_s.
         """
 
         return np.exp(-x)
@@ -225,7 +225,7 @@ class GaussianRingProfile(SurfaceDensityProfile):
         the enclosed mass calculation.
 
         :param mass: Total mass of the ring.
-        :param h: Shape parameter, h = scale_radius / FWHM_ring (optional).
+        :param h: Shape parameter, h = r_s / FWHM_ring (optional).
         :param scale_radius: Scale (peak) radius (optional).
         :param FWHM_ring: Full Width at Half Maximum of the Gaussian ring.
         :param sigma_ring: Standard deviation of the Gaussian ring.
@@ -233,21 +233,21 @@ class GaussianRingProfile(SurfaceDensityProfile):
         """
 
         # Set the Gaussian ring parameters
-        # h is defined as: h = scale_radius / FWHM_ring
-        # check to see that given any two of the four parameters {scale_radius, h, FWHM_ring, sigma_ring},
+        # h is defined as: h = r_s / FWHM_ring
+        # check to see that given any two of the four parameters {r_s, h, FWHM_ring, sigma_ring},
         # the other two can be calculated
         if scale_radius is None and h is None:
-            raise ValueError("Either scale_radius or h must be provided.")
+            raise ValueError("Either r_s or h must be provided.")
 
         class _ParameterSolver:
             def __init__(self):
                 # Map of combinations to calculation functions
                 self.method_map = {
                     ('FWHM_ring', 'h'): self.calculate_from_fwhm_h,
-                    ('FWHM_ring', 'scale_radius'): self.calculate_from_fwhm_scale,
-                    ('h', 'scale_radius'): self.calculate_from_h_scale,
+                    ('FWHM_ring', 'r_s'): self.calculate_from_fwhm_scale,
+                    ('h', 'r_s'): self.calculate_from_h_scale,
                     ('h', 'sigma_ring'): self.calculate_from_h_sigma,
-                    ('scale_radius', 'sigma_ring'): self.calculate_from_scale_sigma,
+                    ('r_s', 'sigma_ring'): self.calculate_from_scale_sigma,
                 }
 
             def calculate(self, **kwargs):
@@ -306,7 +306,7 @@ class GaussianRingProfile(SurfaceDensityProfile):
                 return h, fwhm
         parameters = _ParameterSolver().calculate(h=h, FWHM_ring=FWHM_ring, scale_radius=scale_radius, sigma_ring=sigma_ring)
         self.h = parameters['h']
-        self.scale_radius = parameters['scale_radius']
+        self.scale_radius = parameters['r_s']
         self.sigma_ring = parameters['sigma_ring']
         self.FWHM_ring = parameters['FWHM_ring']
         self.A = self.scale_radius**2 / (2 * self.sigma_ring**2)
@@ -327,7 +327,7 @@ class GaussianRingProfile(SurfaceDensityProfile):
         """
         The surface density follows a shifted Gaussian:
         Σ(r) = Σ0 * exp[-A*(x-1)^2]
-        for x = r / scale_radius.
+        for x = r / r_s.
         """
 
         return np.exp(-self.A * (x-1)**2)
