@@ -17,14 +17,13 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger('RotCurves')
 
 class SurfaceDensityProfile:
-    def __init__(self, mass, effective_radius=None, scale_radius=None, surface_density_function=None,
+    def __init__(self, mass, r_eff=None, r_s=None, surface_density_function=None,
                  q0=0., mass_to_light=1.):
         self.mass = mass
-        self.effective_radius = effective_radius
-        self.scale_radius = scale_radius
+        self.r_eff = r_eff
+        self.r_s = r_s
         self.q0 = q0
         self.mass_to_light = mass_to_light
-
         # Set the default surface density function to an exponential "Freeman Disk" if not provided (e.g., Freeman+1970)
         if surface_density_function is None:
             self.surface_density_function = self._default_surface_density_function
@@ -32,18 +31,18 @@ class SurfaceDensityProfile:
             self.surface_density_function = surface_density_function
 
         # Handle cases where both radii are given
-        if self.effective_radius is not None and self.scale_radius is not None:
-            warnings.warn("Both effective_radius and r_s are given. Using r_s.", UserWarning)
-        elif self.scale_radius is None and self.effective_radius is not None:
-            self.scale_radius = self._calculate_scale_radius_from_effective()
-        elif self.effective_radius is None and self.scale_radius is not None:
-            self.effective_radius = self._calculate_effective_radius_from_scale()
+        if self.r_eff is not None and self.r_s is not None:
+            warnings.warn("Both r_eff and r_s are given. Using r_s.", UserWarning)
+        elif self.r_s is None and self.r_eff is not None:
+            self.r_s = self._calculate_scale_radius_from_effective()
+        elif self.r_eff is None and self.r_s is not None:
+            self.r_eff = self._calculate_effective_radius_from_scale()
         else:
-            raise ValueError("Either r_s or effective_radius must be provided.")
+            raise ValueError("Either r_s or r_eff must be provided.")
 
-        self.scale_density = self.scale_density()
-        self.scale_mass = self.scale_mass()
-        self.scale_velocity = self.scale_velocity()
+        self.scale_density = self._scale_density()
+        self.scale_mass = self._scale_mass()
+        self.scale_velocity = self._scale_velocity()
 
     def _default_surface_density_function(self, r):
         # Default exponential Freeman Disk surface density profile
@@ -52,30 +51,37 @@ class SurfaceDensityProfile:
 
     def _calculate_normalized_radius(self, r):
         # Normalized radius x = r / r_s
-        return np.abs(r) / self.scale_radius
+        return np.abs(r) / self.r_s
 
     def _calculate_scale_radius_from_effective(self):
         # Placeholder formula to convert effective radius to scale radius
-        func = lambda r_s: self.menc_dimless(self.effective_radius / r_s) - 0.5 * self.menc_dimless(np.inf)
-        return solve_numerical_using_brentq(func, p0=self.effective_radius)
+        func = lambda r_s: self.menc_dimless(self.r_eff / r_s) - 0.5 * self.menc_dimless(np.inf)
+        return solve_numerical_using_brentq(func, p0=self.r_eff)
 
     def _calculate_effective_radius_from_scale(self):
         # Placeholder formula to convert scale radius to effective radius
-        func = lambda r_eff: self.menc_dimless(r_eff / self.scale_radius) - 0.5 * self.menc_dimless(np.inf)
+        func = lambda r_eff: self.menc_dimless(r_eff / self.r_s) - 0.5 * self.menc_dimless(np.inf)
         # func = lambda r_eff: self.menc_dimless(r_eff / self.r_s) - 0.5 * self.menc_dimless(3*self.r_s)
-        return solve_numerical_using_brentq(func, p0=self.scale_radius)
+        return solve_numerical_using_brentq(func, p0=self.r_s)
 
-    def scale_density(self):
+    def _scale_density(self):
         # Placeholder for scale density calculation
-        return self.mass / (2 * np.pi * self.scale_radius ** 2 * self.menc_dimless(np.inf))[0]
+        return self.mass / (2 * np.pi * self.r_s ** 2 * self.menc_dimless(np.inf))[0]
 
-    def scale_mass(self):
+    def _scale_intensity(self):
+        # Placeholder for scale intensity calculation
+        if self.mass == 0.:
+            return 1.
+        else:
+            return self.scale_density * self.mass_to_light
+
+    def _scale_mass(self):
         # Placeholder for scale mass calculation
-        return 2 * np.pi * self.scale_density * self.scale_radius**2
+        return 2 * np.pi * self.scale_density * self.r_s**2
 
-    def scale_velocity(self):
+    def _scale_velocity(self):
         # Use the global G_CONST
-        return np.sqrt(G_CONST * self.scale_mass / self.scale_radius)
+        return np.sqrt(G_CONST * self.scale_mass / self.r_s)
 
     def surface_density_dimless(self, x):
         return self.surface_density_function(x)
@@ -137,8 +143,9 @@ class SurfaceDensityProfile:
         return self.vcirc_dimless(x) * self.scale_velocity
 
     def light_profile(self, r):
+        scale_intensity = self._scale_intensity()
         x = self._calculate_normalized_radius(r)
-        return self.mass_to_light * self.surface_density_dimless(x)
+        return scale_intensity * self.surface_density_dimless(x)
 
     def dlnrho_dlnr(self, r):
         """
@@ -148,6 +155,7 @@ class SurfaceDensityProfile:
         x = self._calculate_normalized_radius(r)
         dlnrho_dlnr = np.gradient(np.log(self.surface_density_dimless(x)), np.log(x))
         return dlnrho_dlnr
+
 
 class DarkMatterHaloProfile:
     def __init__(self, mass, z=None, r_vir=None, r_s=None, concentration=None, scale_density=None, virial_overdensity=200, density_function=None):
@@ -339,19 +347,7 @@ class DarkMatterHaloProfile:
         return self._vcirc_dimless(x) * self.scale_velocity
 
 
-if __name__ == '__main__':
-    import matplotlib.pyplot as plt
-
-    now = time_ns()
-    halo = DarkMatterHaloProfile(mass=1e12, z=0, concentration=10, virial_overdensity=200)
-    print(f"{(time_ns() - now) * 1e-9:0.4f} sec")
-
-    now = time_ns()
-    r = np.linspace(0, halo.r_vir, num=100)
-    fig, axes = plt.subplots(ncols=3, figsize=(10, 3))
-    axes[0].loglog(r, halo.density(r), label="Surface Density")
-    axes[1].semilogy(r, halo.menc(r), label="Enclosed Mass")
-    axes[2].plot(r, halo.vcirc(r), label="Circular Velocity")
-    print(f"{(time_ns() - now)*1e-9:0.4f} sec")
-    fig.legend()
-    plt.show()
+# if __name__ == '__main__':
+#     import matplotlib.pyplot as plt
+#
+#     lightring =

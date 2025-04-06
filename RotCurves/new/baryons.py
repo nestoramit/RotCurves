@@ -57,14 +57,14 @@ GaussianRingLookupTables = load_gaussian_tables(GaussianRing_lookuptables_dir)
 
 
 class SersicProfile(SurfaceDensityProfile):
-    def __init__(self, mass, effective_radius=None, scale_radius=None, n=1, q0=0.):
+    def __init__(self, mass, r_eff=None, r_s=None, n=1, q0=0., lookup=True):
         """
         Initializes a SersicProfile instance, inheriting from SurfaceDensityProfile and modifying
         the enclosed mass calculation.
 
         :param mass: Total mass of the galaxy.
-        :param effective_radius: Effective radius (optional).
-        :param scale_radius: Scale radius (optional).
+        :param r_eff: Effective radius (optional).
+        :param r_s: Scale radius (optional).
         :param surface_density_function: Custom surface density function (optional).
         :param n: The Sersic index, determining the concentration of the profile.
         :param q0: intrinsic axis ratio (optional, default is 0).
@@ -73,14 +73,12 @@ class SersicProfile(SurfaceDensityProfile):
         self.n = n
 
         # Call the parent class constructor
-        super().__init__(mass=mass,
-                         effective_radius=effective_radius,
-                         scale_radius=scale_radius,
-                         surface_density_function=self.surface_density_function,
-                         q0=q0)
+        super().__init__(mass=mass, r_eff=r_eff, r_s=r_s,
+                         surface_density_function=self.surface_density_function, q0=q0)
 
 
         # load lookuptables
+        self.lookup = lookup
         self.integral_results = NoordermeerLookupTables[self.n][self._closest_q_table()]
 
     def surface_density_function(self, x):
@@ -99,16 +97,16 @@ class SersicProfile(SurfaceDensityProfile):
         return gammaincinv(2 * self.n, 0.5)
 
     def _calculate_effective_radius_from_scale(self):
-        return self.sersic_b()**self.n * self.scale_radius
+        return self.sersic_b()**self.n * self.r_s
 
     def _calculate_scale_radius_from_effective(self):
-        return self.sersic_b()**-self.n * self.effective_radius
+        return self.sersic_b()**-self.n * self.r_eff
 
-    def scale_density(self):
+    def _scale_density(self):
         corr = gamma(2 * self.n)
-        return self.mass / (2 * np.pi * self.scale_radius**2) / corr
+        return self.mass / (2 * np.pi * self.r_s ** 2) / corr
 
-    def scale_mass(self):
+    def _scale_mass(self):
         return self.mass / gamma(2 * self.n)
 
     def menc_dimless(self, x):
@@ -132,15 +130,19 @@ class SersicProfile(SurfaceDensityProfile):
         The circular velocity is computed following Noordermeer+2008 for a thickened disk
         Taken from the lookuptables under "/lookup_tables/Noordermeer_lookup_tables"
         """
+        if self.lookup:
+            interpolator = CubicSpline(x=self.integral_results[:, 0], y=self.integral_results[:, 1])
 
-        interpolator = CubicSpline(x=self.integral_results[:, 0], y=self.integral_results[:, 1])
+            # TODO: the talbes are in x=r/reff, change to x=r/rs
+            v2 = interpolator(x * self.r_s / self.r_eff)
 
-        # TODO: the talbes are in x=r/reff, change to x=r/rs
-        v2 = interpolator(x*self.scale_radius/self.effective_radius)
+            # TODO: the constant C should be included in the tables and removed from here
+            C = 2 * self.sersic_b()**(self.n+1) / (np.pi * self.n**2)
+            return C * v2
 
-        # TODO: the constant C should be included in the tables and removed from here
-        C = 2 * self.sersic_b()**(self.n+1) / (np.pi * self.n**2)
-        return C * v2
+        else:
+            # TODO: calculate the circular velocity without lookup tables
+            pass
 
     def dlnrho_dlnr(self, r):
         """
@@ -152,22 +154,20 @@ class SersicProfile(SurfaceDensityProfile):
 
 
 class FreemanDisk(SurfaceDensityProfile):
-    def __init__(self, mass, effective_radius=None, scale_radius=None):
+    def __init__(self, mass, r_eff=None, r_s=None):
         """
         Initializes a FreemanDisk instance, inheriting from SurfaceDensityProfile and modifying
         the enclosed mass calculation.
 
         :param mass: Total mass of the galaxy.
-        :param effective_radius: Effective radius (optional).
-        :param scale_radius: Scale radius (optional).
+        :param r_eff: Effective radius (optional).
+        :param r_s: Scale radius (optional).
         :param surface_density_function: Custom surface density function (optional).
         """
 
         # Call the parent class constructor
-        super().__init__(mass=mass,
-                         effective_radius=effective_radius,
-                         scale_radius=scale_radius,
-                         surface_density_function=self.surface_density_function)
+        super().__init__(mass=mass, r_eff=r_eff, r_s=r_s,
+                         q0=0., surface_density_function=self.surface_density_function)
 
     def surface_density_function(self, x):
         """
@@ -180,15 +180,15 @@ class FreemanDisk(SurfaceDensityProfile):
 
 
     def _calculate_effective_radius_from_scale(self):
-        return self.scale_radius * 1.678
+        return self.r_s * 1.678
 
     def _calculate_scale_radius_from_effective(self):
-        return self.effective_radius / 1.678
+        return self.r_eff / 1.678
 
-    def scale_density(self):
-        return self.mass / (2 * np.pi * self.scale_radius**2)
+    def _scale_density(self):
+        return self.mass / (2 * np.pi * self.r_s ** 2)
 
-    def scale_mass(self):
+    def _scale_mass(self):
         return self.mass
 
     def menc_dimless(self, x):
@@ -218,7 +218,7 @@ class FreemanDisk(SurfaceDensityProfile):
 
 
 class GaussianRingProfile(SurfaceDensityProfile):
-    def __init__(self, mass, scale_radius=None, h=None, FWHM_ring=None, sigma_ring=None, mass_to_light=1.,
+    def __init__(self, mass, r_s=None, h=None, FWHM_ring=None, sigma_ring=None, mass_to_light=1.,
                  lookup=True):
         """
         Initializes a GaussianRing instance, inheriting from SurfaceDensityProfile and modifying
@@ -226,7 +226,7 @@ class GaussianRingProfile(SurfaceDensityProfile):
 
         :param mass: Total mass of the ring.
         :param h: Shape parameter, h = r_s / FWHM_ring (optional).
-        :param scale_radius: Scale (peak) radius (optional).
+        :param r_s: Scale (peak) radius (optional).
         :param FWHM_ring: Full Width at Half Maximum of the Gaussian ring.
         :param sigma_ring: Standard deviation of the Gaussian ring.
         :param mass_to_light: Mass-to-light ratio (optional).
@@ -236,7 +236,7 @@ class GaussianRingProfile(SurfaceDensityProfile):
         # h is defined as: h = r_s / FWHM_ring
         # check to see that given any two of the four parameters {r_s, h, FWHM_ring, sigma_ring},
         # the other two can be calculated
-        if scale_radius is None and h is None:
+        if r_s is None and h is None:
             raise ValueError("Either r_s or h must be provided.")
 
         class _ParameterSolver:
@@ -244,10 +244,10 @@ class GaussianRingProfile(SurfaceDensityProfile):
                 # Map of combinations to calculation functions
                 self.method_map = {
                     ('FWHM_ring', 'h'): self.calculate_from_fwhm_h,
-                    ('FWHM_ring', 'r_s'): self.calculate_from_fwhm_scale,
-                    ('h', 'r_s'): self.calculate_from_h_scale,
+                    ('FWHM_ring', 'r_s'): self.calculate_from_fwhm_rs,
+                    ('h', 'r_s'): self.calculate_from_h_rs,
                     ('h', 'sigma_ring'): self.calculate_from_h_sigma,
-                    ('r_s', 'sigma_ring'): self.calculate_from_scale_sigma,
+                    ('r_s', 'sigma_ring'): self.calculate_from_rs_sigma,
                 }
 
             def calculate(self, **kwargs):
@@ -285,13 +285,13 @@ class GaussianRingProfile(SurfaceDensityProfile):
                 sigma = fwhm / (2 * np.sqrt(2 * np.log(2)))
                 return scale, sigma
 
-            def calculate_from_fwhm_scale(self, fwhm, scale):
-                h = scale / fwhm
+            def calculate_from_fwhm_rs(self, fwhm, r_s):
+                h = r_s / fwhm
                 sigma = fwhm / (2 * np.sqrt(2 * np.log(2)))
                 return h, sigma
 
-            def calculate_from_h_scale(self, h, scale):
-                fwhm = scale / h
+            def calculate_from_h_rs(self, h, r_s):
+                fwhm = r_s / h
                 sigma = fwhm / (2 * np.sqrt(2 * np.log(2)))
                 return fwhm, sigma
 
@@ -300,22 +300,20 @@ class GaussianRingProfile(SurfaceDensityProfile):
                 scale = fwhm * h
                 return fwhm, scale
 
-            def calculate_from_scale_sigma(self, scale, sigma):
+            def calculate_from_rs_sigma(self, r_s, sigma):
                 fwhm = 2 * sigma * np.sqrt(2 * np.log(2))
-                h = scale / fwhm
+                h = r_s / fwhm
                 return h, fwhm
-        parameters = _ParameterSolver().calculate(h=h, FWHM_ring=FWHM_ring, scale_radius=scale_radius, sigma_ring=sigma_ring)
+        parameters = _ParameterSolver().calculate(h=h, FWHM_ring=FWHM_ring, r_s=r_s, sigma_ring=sigma_ring)
         self.h = parameters['h']
-        self.scale_radius = parameters['r_s']
+        self.r_s = parameters['r_s']
         self.sigma_ring = parameters['sigma_ring']
         self.FWHM_ring = parameters['FWHM_ring']
-        self.A = self.scale_radius**2 / (2 * self.sigma_ring**2)
+        self.A = self.r_s ** 2 / (2 * self.sigma_ring ** 2)
 
         # Call the parent class constructor
-        super().__init__(mass=mass,
-                         scale_radius=scale_radius,
-                         surface_density_function=self.surface_density_function,
-                         mass_to_light=mass_to_light)
+        super().__init__(mass=mass, r_s=self.r_s, surface_density_function=self.surface_density_function,
+                         q0=0., mass_to_light=mass_to_light)
 
 
         # load lookuptables
@@ -333,12 +331,12 @@ class GaussianRingProfile(SurfaceDensityProfile):
 
         return np.exp(-self.A * (x - 1) ** 2)
 
-    def scale_density(self):
+    def _scale_density(self):
         A = self.A
         corr = 1 / (2 * A) * (np.exp(-A) + np.sqrt(np.pi * A) * (1 + gammainc(0.5, A)))
-        return self.mass / (2 * np.pi * self.scale_radius**2) / corr
+        return self.mass / (2 * np.pi * self.r_s ** 2) / corr
 
-    def scale_mass(self):
+    def _scale_mass(self):
         A = self.A
         corr = 1 / (2 * A) * (np.exp(-A) + np.sqrt(np.pi * A) * (1 + gammainc(0.5, A)))
         return self.mass / corr
@@ -398,6 +396,26 @@ class GaussianRingProfile(SurfaceDensityProfile):
         return - 2 * self.A * x * (x - 1)
 
 
+class LightGaussianRingProfile(GaussianRingProfile):
+    def __init__(self, r_s=None, h=None, FWHM_ring=None, sigma_ring=None, lookup=True):
+        # Call the parent class constructor
+        mass = 0.
+        super().__init__(mass=mass, r_s=r_s, h=h, FWHM_ring=FWHM_ring, sigma_ring=sigma_ring, lookup=lookup)
+
+
+class LightSersicProfile(SersicProfile):
+    def __init__(self, r_eff=None, r_s=None, n=1., lookup=True):
+        # Call the parent class constructor
+        mass = 0.
+        super().__init__(mass=mass, r_eff=r_eff, r_s=r_s, n=n, lookup=lookup)
+
+
+class LightFreemanDiskProfile(FreemanDisk):
+    def __init__(self, r_eff=None, r_s=None):
+        # Call the parent class constructor
+        mass = 0.
+        super().__init__(mass=mass, r_eff=r_eff, r_s=r_s)
+
 # Test if a FreemanDisk and SersicProfile with n=1 are the same
 def test_freeman_sersic():
     M = 1e11
@@ -406,8 +424,8 @@ def test_freeman_sersic():
     q0 = 0
 
     r = np.linspace(0, 20, num=100)
-    sersic = SersicProfile(mass=M, effective_radius=Reff, n=n, q0=q0)
-    freeman = FreemanDisk(mass=M, effective_radius=Reff)
+    sersic = SersicProfile(mass=M, r_eff=Reff, n=n, q0=q0)
+    freeman = FreemanDisk(mass=M, r_eff=Reff)
 
     rtol = 1e-3
     atol = 0.
@@ -422,28 +440,31 @@ def test_freeman_sersic():
 if __name__ == '__main__':
     from rotationcurves.models.models import GaussianRingObject
 
-    M = 1e10
-    Rpeak = 5.
-    h = 1.
-    kpc = c.kpc.to(u.m).value
-    M_solar = c.M_sun.to(u.kg).value  # kg
-    G = c.G.to(u.m ** 3 / u.kg / u.s ** 2).value  # m^3 kg^-1 s^-2
 
-    r = np.linspace(0, 10*Rpeak, num=100)
-
-    freeman = FreemanDisk(mass=M, scale_radius=Rpeak)
-    ring_new = GaussianRingProfile(mass=M, scale_radius=Rpeak, h=h, lookup=False)
-    ring_old = GaussianRingObject(mass=M, rpeak=Rpeak, ring_FWHM=Rpeak/h, use_lookuptable=True)
-    ring_old.get_profiles(r)
-    ring_old.get_RC(r)
-
-    fig, axes = plt.subplots(ncols=3, figsize=(10, 3))
-    axes[0].plot(r, ring_new.surface_density(r), label="Surface Density")
-    axes[0].plot(r, ring_old.density_profile, ls='--', label="Surface Density old")
-    axes[1].plot(r, ring_new.menc(r), label="Enclosed Mass")
-    axes[1].plot(r, ring_old.mass_profile*ring_old.mass/ring_old.M0, ls='--', label="Enclosed Mass old")
-    axes[2].plot(r, ring_new.vcirc(r), label="Circular Velocity")
-    axes[2].plot(r, ring_old.V/np.sqrt(G)*1e-3, ls='--', label="Circular Velocity old")
-    axes[2].plot(r, freeman.vcirc(r), ls='-.', label="Freeman Disk")
-    plt.legend()
-    plt.show()
+    test = LightFreemanDiskProfile(r_s=5)
+    a = 0
+    # M = 1e10
+    # Rpeak = 5.
+    # h = 1.
+    # kpc = c.kpc.to(u.m).value
+    # M_solar = c.M_sun.to(u.kg).value  # kg
+    # G = c.G.to(u.m ** 3 / u.kg / u.s ** 2).value  # m^3 kg^-1 s^-2
+    #
+    # r = np.linspace(0, 10*Rpeak, num=100)
+    #
+    # freeman = FreemanDisk(mass=M, r_s=Rpeak)
+    # ring_new = GaussianRingProfile(mass=M, r_s=Rpeak, h=h, lookup=False)
+    # ring_old = GaussianRingObject(mass=M, rpeak=Rpeak, ring_FWHM=Rpeak/h, use_lookuptable=True)
+    # ring_old.get_profiles(r)
+    # ring_old.get_RC(r)
+    #
+    # fig, axes = plt.subplots(ncols=3, figsize=(10, 3))
+    # axes[0].plot(r, ring_new.surface_density(r), label="Surface Density")
+    # axes[0].plot(r, ring_old.density_profile, ls='--', label="Surface Density old")
+    # axes[1].plot(r, ring_new.menc(r), label="Enclosed Mass")
+    # axes[1].plot(r, ring_old.mass_profile*ring_old.mass/ring_old.M0, ls='--', label="Enclosed Mass old")
+    # axes[2].plot(r, ring_new.vcirc(r), label="Circular Velocity")
+    # axes[2].plot(r, ring_old.V/np.sqrt(G)*1e-3, ls='--', label="Circular Velocity old")
+    # axes[2].plot(r, freeman.vcirc(r), ls='-.', label="Freeman Disk")
+    # plt.legend()
+    # plt.show()
