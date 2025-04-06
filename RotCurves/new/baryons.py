@@ -323,6 +323,7 @@ class GaussianRingProfile(SurfaceDensityProfile):
         self.lookup = lookup
         self.integral_results = GaussianRingLookupTables[self._closest_h_table()]
 
+    # Density function for the Gaussian ring
     def surface_density_function(self, x):
         """
         The surface density follows a shifted Gaussian:
@@ -330,7 +331,7 @@ class GaussianRingProfile(SurfaceDensityProfile):
         for x = r / r_s.
         """
 
-        return np.exp(-self.A * (x-1)**2)
+        return np.exp(-self.A * (x - 1) ** 2)
 
     def scale_density(self):
         A = self.A
