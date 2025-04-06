@@ -409,7 +409,7 @@ class HaloObject:
             self.alpha = None
             self.beta = None
             self.gamma = None
-        elif self.type in ['einasto', 'Einasto']:
+        elif self.type in ['dekel', 'Einasto']:
             self.alpha = alpha
             self.beta = None
             self.gamma = None
@@ -467,10 +467,10 @@ class HaloObject:
         elif self.type in ['Burkert', 'burkert']:
             fM = 3/2 * (np.log(1 + x**2) / 2 + np.log(1 + x) - np.arctan(x))
 
-        elif self.type in ['Einasto', 'einasto'] and self.alpha == 1.:
+        elif self.type in ['Einasto', 'dekel'] and self.alpha == 1.:
             fM = 3/8 * np.exp(2) * scp_functions.gammainc(3, 2 * x) * scp_functions.gamma(3)
 
-        elif self.type in ['Einasto', 'einasto']:
+        elif self.type in ['Einasto', 'dekel']:
             fM = 3/2 * np.power(2/self.alpha, 1 - 3/self.alpha) * np.exp(2/self.alpha) * scp_functions.gammainc(3/self.alpha, 2/self.alpha * np.power(x, self.alpha)) * scp_functions.gamma(3/self.alpha)
 
         elif self.type in ['Dekel', 'dekel', 'Dekel-Zhao', 'dekel-zhao', 'Dekel-Zhao', 'DZ']:
@@ -510,7 +510,7 @@ class HaloObject:
         elif self.type in ["burkert", "Burkert"]:
             frho = 1 / ((1 + x) * (1 + np.power(x, 2)))
 
-        elif self.type in ['Einasto', 'einasto']:
+        elif self.type in ['Einasto', 'dekel']:
             frho = np.exp(-2/self.alpha * (np.power(x, self.alpha) - 1))
 
         elif self.type in ['Lucky 13', 'Lucky13', 'lucky 13', 'lucky13', 'L13', 'l13']:
