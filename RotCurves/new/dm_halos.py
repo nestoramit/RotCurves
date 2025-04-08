@@ -8,7 +8,7 @@ from scipy.special import hyp2f1, gamma, gammainc
 
 class NFWHalo(DarkMatterHaloProfile):
     def __init__(self, z=0.0, mass=1e12, concentration=10, virial_overdensity=200.,
-                 r_vir=None, r_s=None, scale_density=None):
+                 r_vir=None, r_s=None, scale_density=None, adiabatic_contraction=False):
         """
         Initialize an NFW halo profile.
 
@@ -20,7 +20,8 @@ class NFWHalo(DarkMatterHaloProfile):
 
         super().__init__(mass=mass, concentration=concentration, z=z, virial_overdensity=virial_overdensity,
                          r_vir=r_vir, r_s=r_s, scale_density=scale_density,
-                         density_function=self.density_function)
+                         density_function=self.density_function,
+                         adiabatic_contraction=adiabatic_contraction)
 
     def density_function(self, x):
         return x**-1 * (1 + x)**-2
@@ -31,7 +32,7 @@ class NFWHalo(DarkMatterHaloProfile):
 
 class alhpaNFWHalo(DarkMatterHaloProfile):
     def __init__(self, z=0.0, mass=1e12, concentration=10, virial_overdensity=200., alpha=1.0,
-                 r_vir=None, r_s=None, scale_density=None):
+                 r_vir=None, r_s=None, scale_density=None, adiabatic_contraction=False):
         """
         Initialize an NFW halo profile.
 
@@ -45,7 +46,8 @@ class alhpaNFWHalo(DarkMatterHaloProfile):
         self.alpha = alpha
         super().__init__(mass=mass, concentration=concentration, z=z, virial_overdensity=virial_overdensity,
                          r_vir=r_vir, r_s=r_s, scale_density=scale_density,
-                         density_function=self.density_function)
+                         density_function=self.density_function,
+                         adiabatic_contraction=adiabatic_contraction)
 
     def density_function(self, x):
         return x**-self.alpha * (1 + x)**-(3-self.alpha)
@@ -55,7 +57,7 @@ class alhpaNFWHalo(DarkMatterHaloProfile):
 
 class BurkertHalo(DarkMatterHaloProfile):
     def __init__(self, z=0.0, mass=1e12, concentration=10, virial_overdensity=200., alpha=1.0,
-                 r_vir=None, r_s=None, scale_density=None):
+                 r_vir=None, r_s=None, scale_density=None, adiabatic_contraction=False):
         """
         Initialize a Burkert halo profile (Burkert+1995).
 
@@ -67,7 +69,8 @@ class BurkertHalo(DarkMatterHaloProfile):
 
         super().__init__(mass=mass, concentration=concentration, z=z, virial_overdensity=virial_overdensity,
                          r_vir=r_vir, r_s=r_s, scale_density=scale_density,
-                         density_function=self.density_function)
+                         density_function=self.density_function,
+                         adiabatic_contraction=adiabatic_contraction)
 
     def density_function(self, x):
         return ((1+x)*(1 + x**2))**-1
@@ -77,7 +80,7 @@ class BurkertHalo(DarkMatterHaloProfile):
 
 class EinastoHalo(DarkMatterHaloProfile):
     def __init__(self, z=0.0, mass=1e12, concentration=10, virial_overdensity=200., n=1.0,
-                 r_vir=None, r_s=None, scale_density=None):
+                 r_vir=None, r_s=None, scale_density=None, adiabatic_contraction=False):
         """
         Initialize a Burkert halo profile (Burkert+1995).
 
@@ -92,7 +95,8 @@ class EinastoHalo(DarkMatterHaloProfile):
 
         super().__init__(mass=mass, concentration=concentration, z=z, virial_overdensity=virial_overdensity,
                          r_vir=r_vir, r_s=r_s, scale_density=scale_density,
-                         density_function=self.density_function)
+                         density_function=self.density_function,
+                         adiabatic_contraction=adiabatic_contraction)
 
     def density_function(self, x):
         return np.exp(-x**(1/self.n))
@@ -102,7 +106,7 @@ class EinastoHalo(DarkMatterHaloProfile):
 
 class DekelZhaoHalo(DarkMatterHaloProfile):
     def __init__(self, z=0.0, mass=1e12, concentration=10, virial_overdensity=200., alpha=1., g=3.5, b=2.,
-                 r_vir=None, r_s=None, scale_density=None):
+                 r_vir=None, r_s=None, scale_density=None, adiabatic_contraction=False):
         """
         Initialize a Dekel-Zhao halo profile (Freundlich+2020).
 
@@ -121,7 +125,8 @@ class DekelZhaoHalo(DarkMatterHaloProfile):
 
         super().__init__(mass=mass, concentration=concentration, z=z, virial_overdensity=virial_overdensity,
                          r_vir=r_vir, r_s=r_s, scale_density=scale_density,
-                         density_function=self.density_function)
+                         density_function=self.density_function,
+                         adiabatic_contraction=adiabatic_contraction)
 
     def density_function(self, x):
         p1 = (3-self.alpha)/self.alpha * (1 + (3-self.g)/(3-self.alpha)*x**(1/self.b))

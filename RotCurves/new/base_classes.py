@@ -24,6 +24,7 @@ class SurfaceDensityProfile:
         self.r_s = r_s
         self.q0 = q0
         self.mass_to_light = mass_to_light
+
         # Set the default surface density function to an exponential "Freeman Disk" if not provided (e.g., Freeman+1970)
         if surface_density_function is None:
             self.surface_density_function = self._default_surface_density_function
@@ -82,6 +83,10 @@ class SurfaceDensityProfile:
     def _scale_velocity(self):
         # Use the global G_CONST
         return np.sqrt(G_CONST * self.scale_mass / self.r_s)
+
+    def _is_massive(self):
+        # Check if the mass is massive
+        return self.mass > 0.
 
     def surface_density_dimless(self, x):
         return self.surface_density_function(x)
@@ -142,10 +147,16 @@ class SurfaceDensityProfile:
         x = self._calculate_normalized_radius(r)
         return self.vcirc_dimless(x) * self.scale_velocity
 
-    def light_profile(self, r):
+    def light_profile(self, r, r2=None):
         scale_intensity = self._scale_intensity()
         x = self._calculate_normalized_radius(r)
-        return scale_intensity * self.surface_density_dimless(x)
+        if r2 is None:
+            lprof = self.surface_density_dimless(x)
+        else:
+            x2 = self._calculate_normalized_radius(r2)
+            lprof = self.surface_density_dimless(np.sqrt(x**2 + x2**2))
+
+        return scale_intensity * lprof
 
     def dlnrho_dlnr(self, r):
         """
@@ -158,7 +169,8 @@ class SurfaceDensityProfile:
 
 
 class DarkMatterHaloProfile:
-    def __init__(self, mass, z=None, r_vir=None, r_s=None, concentration=None, scale_density=None, virial_overdensity=200, density_function=None):
+    def __init__(self, mass, z=None, r_vir=None, r_s=None, concentration=None, scale_density=None,
+                 virial_overdensity=200, density_function=None, adiabatic_contraction=False):
         self.z = z
         self.mass = mass
         self.r_vir = r_vir
@@ -167,6 +179,7 @@ class DarkMatterHaloProfile:
         self.scale_density = scale_density
         self.virial_overdensity = virial_overdensity
         self.density_function = density_function
+        self.adiabatic_contraction = adiabatic_contraction
 
         # Set the default redshift to 0 if not provided
         if z is None:

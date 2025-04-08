@@ -1,0 +1,94 @@
+----------------------------------
+--- RotCurves MCMC fit results ---
+----- zC_406690-MassiveRing -----
+----------------------------------
+
+output folder: C:\Users\amitn\OneDrive - Tel-Aviv University\code\github-rotationcurves\RotCurves\new\default_output_folder/zC_406690-MassiveRing-free[M_baryon, M_vir, BT, R_peak, ring_FWHM, sigma]-2025-04-08
+data folder: C:\Users\amitn\OneDrive - Tel-Aviv University\MPE\RC_raw_data
+Date: 2025-04-08 14:53:48.577438
+runtime: 1.0 minutes
+
+MCMC fitting goals
+##########################
+    fit flux: 0
+    fit velocity: 1
+    fit dispersion: 1
+num walkers:  20
+num burnins:   1
+num iterations:   2
+    converged after:   2
+
+Bestfit params
+##########################
+    M_baryon:   11.21 (+0.00 -0.00) [MAP: 11.21]
+    M_vir:      11.92 (+0.00 -0.00) [MAP: 11.92]
+    BT:         0.50 (+0.00 -0.00) [MAP: 0.50]
+    R_peak:     4.57 (+0.00 -0.00) [MAP: 4.57]
+    ring_FWHM:  5.06 (+0.00 -0.00) [MAP: 5.06]
+    sigma:      60.00 (+0.00 -0.00) [MAP: 60.00]
+    f:          0.10 (+0.00 -0.00) [MAP: 0.10]
+
+Prior information:
+##########################
+    Re:         FIXED (4.82)
+    Re:         FIXED (4.82)
+    Re:         FIXED (4.82)
+    Re:         FIXED (4.82)
+    DT:         FIXED (0.10)
+    DT:         FIXED (0.10)
+    DT:         FIXED (0.10)
+    DT:         FIXED (0.10)
+    c:          FIXED (4.00)
+    alpha:      FIXED (1.00)
+    i:          FIXED (25.00)
+
+Model Components
+-----------------
+ring:
+    logmass:    10.91   [solmass]
+    r_peak:     4.57    [kpc]
+    ring_FWHM:  5.1     []
+    light:      1.0
+-----------------
+bulge:
+    logmass:    10.91   [solmass]
+    reff:       1.00    [kpc]
+    n_sersic:   4.0     []
+    q0:       1.00    []
+    M/L:      0.0
+-----------------
+halo:
+    f_dm:       0.10    []
+    logmass:    11.92   [solmass]
+    conc:       4.00    []
+    alpha:      1.00    []
+-----------------
+dispersion:
+    sigma0:     60.00   [km/s]
+    ps. type:   general
+
+Gemoetry
+-----------------
+    inc:   25.00
+    beam FWHM:   0.30" (2.54 kpc )
+
+Additional knobs
+-----------------
+    Adiabatic contraction:  0
+
+mcmc information
+########################## 
+degrees of freedom: 10.00
+red_chisq:          49748820.48
+    red_chisq_flux: 0.00
+    red_chisq_vel:  8418037.44
+    red_chisq_disp: 41330783.05
+mean acceptance ratio:    0.47 (+/- 0.33)
+stretch move a:    5.00    # sampler performs a move with size sampled uniformly from [1/a, a], with size 1/sqrt(a) 
+mean auto-correlation time (tau):    0.34
+    tau M_baryon:    0.22
+    tau M_vir:       0.53
+    tau BT:          0.09
+    tau R_peak:      0.06
+    tau ring_FWHM:   0.33
+    tau sigma:       0.79

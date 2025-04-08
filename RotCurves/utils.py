@@ -252,6 +252,7 @@ def find_maximum_frequency(data_array, bins, axis=0):
 
 def sersic_b(n):
     return scp_functions.gammaincinv(2 * n, 0.5)
+
 # ------------------------------------ Functions for plotting ------------------------------------
 
 colors_list = sns.color_palette('deep', n_colors=10)

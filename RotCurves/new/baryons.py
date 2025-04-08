@@ -20,7 +20,9 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger('RotCurves')
 
 
-def load_noor_lookuptable(dir_path):
+def load_noor_lookuptable():
+    dir_path = LOOKUP_TABLES_PATH+'/Noordermeer_lookup_tables'
+
     tables = {}
     q_list = np.asarray(list(set([float(x[x.find('_q') + 2:x.find('.npy')]) for x in os.listdir(dir_path) if x.find('npy') > 0])))
     n_list = np.asarray(list(set([float(x[x.find('_n') + 2:x.find('_q')]) for x in os.listdir(dir_path) if x.find('npy') > 0])))
@@ -31,33 +33,37 @@ def load_noor_lookuptable(dir_path):
         tables[n] = {}
         for q in q_list:
             try:
-                tables[n][q] = np.load(os.path.join(dir_path, "noor_n%2.2f_q%2.2f.npy" % (n, q)))
+                tables[n][q] = np.load(os.path.join(dir_path, f"noor_n{n:2.2f}_q{q:2.2f}.npy"))
             except:
                 pass
     return tables
 
-def load_gaussian_tables(dir_path):
-    tables = {}
+def load_gaussian_tables():
+    dir_path = LOOKUP_TABLES_PATH+'/GaussianRing_lookup_tables'
+    dir_BT_path = LOOKUP_TABLES_PATH+'/GaussianRing_BTmin_lookup_tables'
+
+    tables, BT_tables = {}, {}
     # TODO: switch from invh to h
-    invh_list = np.asarray(list(
-        set([float(x[x.find('_invh') + 6:x.find('.csv')]) for x in os.listdir(dir_path) if
-             x.find('csv') > 0])))
-    tables['h_list'] = invh_list
+    h_list = np.asarray(list(set([float(x[x.find('_invh') + 6:x.find('.csv')]) for x in os.listdir(dir_path) if x.find('csv') > 0])))
+    tables['h_list'] = h_list
+    for h in h_list:
+        tables[h] = np.load(os.path.join(dir_path, f"Gauss_invh_{h:2.2f}.npy"))
 
-    for invh in invh_list:
-        tables[invh] = np.load(os.path.join(dir_path, "Gauss_invh_%2.2f.npy" % invh))
-    return tables
+    bt_h_list = np.asarray(list(set([float(x[x.find('_invh') + 6:x.find('.csv')]) for x in os.listdir(dir_BT_path) if x.find('csv') > 0])))
+    BT_tables['h_list'] = bt_h_list
+    for h in bt_h_list:
+        BT_tables[h] = np.load(dir_BT_path+f"/Gauss_BTmin_invh_{h:2.2f}.npy")
 
+    return tables, BT_tables
 
 # TODO: change directory when taking out of "new" folder
-noor_lookuptables_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + "/lookup_tables/Noordermeer_lookup_tables"
-GaussianRing_lookuptables_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + "/lookup_tables/GaussianRing_lookup_tables"
-NoordermeerLookupTables = load_noor_lookuptable(noor_lookuptables_dir)
-GaussianRingLookupTables = load_gaussian_tables(GaussianRing_lookuptables_dir)
+LOOKUP_TABLES_PATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + "/lookup_tables"
+NoordermeerLookupTables = load_noor_lookuptable()
+GaussianRingLookupTables, GaussianRingBTminLookupTables = load_gaussian_tables()
 
 
 class SersicProfile(SurfaceDensityProfile):
-    def __init__(self, mass, r_eff=None, r_s=None, n=1, q0=0., lookup=True):
+    def __init__(self, mass, r_eff=None, r_s=None, n=1, q0=0., mass_to_light=1., lookup=True):
         """
         Initializes a SersicProfile instance, inheriting from SurfaceDensityProfile and modifying
         the enclosed mass calculation.
@@ -74,12 +80,13 @@ class SersicProfile(SurfaceDensityProfile):
 
         # Call the parent class constructor
         super().__init__(mass=mass, r_eff=r_eff, r_s=r_s,
-                         surface_density_function=self.surface_density_function, q0=q0)
+                         surface_density_function=self.surface_density_function, q0=q0,
+                         mass_to_light=mass_to_light)
 
 
         # load lookuptables
         self.lookup = lookup
-        self.integral_results = NoordermeerLookupTables[self.n][self._closest_q_table()]
+        self.vcirc_lookup_table = self._vcirc_lookup_table()
 
     def surface_density_function(self, x):
         """
@@ -116,14 +123,15 @@ class SersicProfile(SurfaceDensityProfile):
         """
         return gammainc(2 * self.n, x ** (1 / self.n)) * gamma(2 * self.n)
 
-    def _closest_q_table(self):
+    def _vcirc_lookup_table(self):
         q0_list = NoordermeerLookupTables['q_list']
         if self.q0 in q0_list:
-            return self.q0
+            closest_q0 = self.q0
         else:
-            q0_closest = q0_list[np.argmin(np.abs(q0_list - self.q0))]
+            closest_q0 = q0_list[np.argmin(np.abs(q0_list - self.q0))]
             logger.warning('Sersic disk q: non-exact value, using %2.3f instead of %2.3f' % (q0_closest, self.q0))
-            return q0_closest
+
+        return NoordermeerLookupTables[self.n][closest_q0]
 
     def vcirc2_dimless(self, x):
         """
@@ -131,7 +139,7 @@ class SersicProfile(SurfaceDensityProfile):
         Taken from the lookuptables under "/lookup_tables/Noordermeer_lookup_tables"
         """
         if self.lookup:
-            interpolator = CubicSpline(x=self.integral_results[:, 0], y=self.integral_results[:, 1])
+            interpolator = CubicSpline(x=self.vcirc_lookup_table[:, 0], y=self.vcirc_lookup_table[:, 1])
 
             # TODO: the talbes are in x=r/reff, change to x=r/rs
             v2 = interpolator(x * self.r_s / self.r_eff)
@@ -154,7 +162,7 @@ class SersicProfile(SurfaceDensityProfile):
 
 
 class FreemanDisk(SurfaceDensityProfile):
-    def __init__(self, mass, r_eff=None, r_s=None):
+    def __init__(self, mass, r_eff=None, r_s=None, mass_to_light=1.):
         """
         Initializes a FreemanDisk instance, inheriting from SurfaceDensityProfile and modifying
         the enclosed mass calculation.
@@ -167,7 +175,8 @@ class FreemanDisk(SurfaceDensityProfile):
 
         # Call the parent class constructor
         super().__init__(mass=mass, r_eff=r_eff, r_s=r_s,
-                         q0=0., surface_density_function=self.surface_density_function)
+                         q0=0., surface_density_function=self.surface_density_function,
+                         mass_to_light=mass_to_light)
 
     def surface_density_function(self, x):
         """
@@ -315,11 +324,11 @@ class GaussianRingProfile(SurfaceDensityProfile):
         super().__init__(mass=mass, r_s=self.r_s, surface_density_function=self.surface_density_function,
                          q0=0., mass_to_light=mass_to_light)
 
-
         # load lookuptables
         # TODO: update path
         self.lookup = lookup
-        self.integral_results = GaussianRingLookupTables[self._closest_h_table()]
+        self.vcirc_lookup_table = self._vcirc_lookup_table()
+        self.btmin_lookup_table = self._btmin_lookup_table()
 
     # Density function for the Gaussian ring
     def surface_density_function(self, x):
@@ -341,14 +350,64 @@ class GaussianRingProfile(SurfaceDensityProfile):
         corr = 1 / (2 * A) * (np.exp(-A) + np.sqrt(np.pi * A) * (1 + gammainc(0.5, A)))
         return self.mass / corr
 
-    # def menc_dimless_paper(self, x):
-    #     A = self.A
-    #     Ax = A * (x-1)**2
-    #
-    #     p1 = np.exp(-A/2)/A * np.exp(-1/2*Ax)
-    #     p2 = np.sinh(1/2 * (Ax - A))
-    #     p3 = 1 / (2*np.sqrt(A)) * (gammainc(0.5, A) + gammainc(0.5, Ax*np.sign(x-1))) * gamma(0.5)
-    #     return p1*p2 + p3
+    def _vcirc_lookup_table(self):
+        h_list = GaussianRingLookupTables['h_list']
+        if self.h in h_list:
+            closest_h = self.h
+        else:
+            closest_h = h_list[np.argmin(np.abs(h_list - self.h))]
+            logger.warning(f'Gaussian Ring h: non-exact value, using {closest_h:2.3f} instead of {self.h:2.3f}')
+
+        return GaussianRingLookupTables[closest_h]
+
+    def _btmin_lookup_table(self):
+        h_list = GaussianRingBTminLookupTables['h_list']
+        if self.h in h_list:
+            closest_h = self.h
+        else:
+            closest_h = h_list[np.argmin(np.abs(h_list - self.h))]
+            logger.warning(f'Gaussian Ring h: non-exact value, using {closest_h:2.3f} instead of {self.h:2.3f}')
+
+        return GaussianRingBTminLookupTables[closest_h]
+
+# def _closest_h_table(self):
+#         h_list = GaussianRingLookupTables['h_list']
+#
+#         if self.h in h_list:
+#             closest_h = self.h
+#         else:
+#             closest_h = h_list[np.argmin(np.abs(h_list - self.h))]
+#             logger.warning(f'Gaussian Ring h: non-exact value, using {closest_h:2.3f} instead of {self.h:2.3f}')
+#
+#         return closest_h
+
+    def min_stabilizing_mass(self):
+        if self.lookup:
+            interpolator = CubicSpline(x=self.btmin_lookup_table[: ,0],
+                                       y=self.btmin_lookup_table[:, 1])
+            BT_min = interpolator(self.r_s)
+
+        else:
+            logger.warning('Gaussian Ring BT min: No lookuptable found. Calculating ...')
+
+            R_array = np.logspace(-2, np.log10(2), num=51) * self.r_s
+            N = int(1e3)
+            i = 0
+            for BT in np.logspace(-3, 0, num=N):
+                bulge_mass = self.mass * BT / (1 - BT)
+                bulge = SersicProfile(mass=bulge_mass, r_eff=1.0, n=4.0, q0=1.0)
+
+                vcirc2_new = self.vcirc2(R_array) + bulge.vcirc2(R_array)
+                if all(vcirc2_new > 0):
+                    BT_min = np.ceil(BT * 1e4) * 1e-4
+                    logger.warning(f'Gaussian Ring BT min: Found BTmin = {BT_min:%.4f} for invh = {self.h:%.2f} ...')
+                    break
+                if i == N-1:
+                    logger.warning(r"Couldn't find central stabilizing mass for the given Gaussian ring distribution.")
+                    BT_min = 0.99
+                i += 1
+
+        return BT_min
 
     def menc_dimless(self, x):
         A = self.A
@@ -358,16 +417,6 @@ class GaussianRingProfile(SurfaceDensityProfile):
         p2 = 1 / (2 * np.sqrt(A)) * (gammainc(0.5, A) + gammainc(0.5, Ax) * np.sign(x - 1)) * gamma(0.5)
         return p1 + p2
 
-    def _closest_h_table(self):
-        h_list = GaussianRingLookupTables['h_list']
-
-        if self.h in h_list:
-            closest_h = self.h
-        else:
-            closest_h = h_list[np.argmin(np.abs(h_list - self.h))]
-            logger.warning(f'Gaussian Ring h: non-exact value, using {closest_h:2.3f} instead of {self.h:%2.3f}')
-
-        return closest_h
 
     def vcirc2_dimless(self, x):
         """
@@ -377,7 +426,7 @@ class GaussianRingProfile(SurfaceDensityProfile):
         if self.lookup:
             # Use the lookup table for the Gaussian ring
             # TODO: something is wrong with the lookup table, it is not working. calculate it again.
-            interpolator = CubicSpline(x=self.integral_results[:, 0], y=self.integral_results[:, 1])
+            interpolator = CubicSpline(x=self.vcirc_lookup_table[:, 0], y=self.vcirc_lookup_table[:, 1])
             v2 = interpolator(x)
 
         else:
@@ -393,7 +442,7 @@ class GaussianRingProfile(SurfaceDensityProfile):
 
     def dlnrho_dlnr(self, r):
         x = self._calculate_normalized_radius(r)
-        return - 2 * self.A * x * (x - 1)
+        return - 1/2 * 2 * self.A * x * (x - 1)
 
 
 class LightGaussianRingProfile(GaussianRingProfile):
