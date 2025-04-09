@@ -166,9 +166,9 @@ class Prior:
         self.sig = gauss_sigma
 
     def type_altnames(self, type):
-        if type in [ 'fixed', 'Fixed', 'f']:
+        if type in [ 'fixed', 'Fixed']:
             return 'fixed'
-        if type in ['uniform', 'flat', 'u', 'Uniform']:
+        if type in ['uniform', 'u', 'Uniform', 'flat', 'f']:
             return 'uniform'
         elif type in ['gaussian', 'g', 'Gaussian']:
             return 'gaussian'
@@ -308,11 +308,11 @@ def update_prob(prob, xdata, ydata, ydata_err, xinterp, yinterp):
 
 def lnprob(theta, galaxy, mcmc_hparameters):
     lp = lnprior(theta, galaxy)
-    if not np.isfinite(lp):
+    if not np.isfinite(lp) or np.isnan(lp):
         return -np.inf
     else:
         lk = lnlike(theta, galaxy, mcmc_hparameters)
-        if np.isnan(lk):
+        if not np.isfinite(lk) or np.isnan(lk):
             return -np.inf
         else:
             return lp + lk

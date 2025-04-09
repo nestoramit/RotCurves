@@ -30,12 +30,12 @@ class RotationCurveObject:
         self.oversample = oversample
 
         self.sigma_inst = sigma_inst
-        self.sigma0 = sigma_dispersion * 1e3
+        self.sigma0 = sigma_dispersion
         self.dispersion_function = dispersion_function
         self.pressure_support = pressure_support
         self.ndim = ndim
         self.PA = PA
-        self.Vradial = radial_velocity*1e3
+        self.Vradial = radial_velocity
 
         if self.sigma_beam is None and self.FWHM_beam is not None:
             self.sigma_beam = self.FWHM_beam / (2 * np.sqrt(2 * np.log(2)))
@@ -239,7 +239,7 @@ class RotationCurveObject:
             for comp in [self.disk, self.ring]:
                 if comp is not None:
                     if comp._is_massive():
-                        self.V2sigma += 2 * self.sigma_profile ** 2 * comp.dlnrho_dlnr(absR)
+                        self.V2sigma += 2 * self.sigma_profile ** 2 * (absR/comp.r_s) * comp.dlnrho_dlnr(absR)
             # if self.disk is not None:
             #     if self.disk._is_massive():
             #         self.V2sigma += - 2 * self.sigma_profile ** 2 * absR * (self.disk.density_prime_to_density_function(absR))
@@ -258,9 +258,9 @@ class RotationCurveObject:
         #     self.V2sigma += 2 * self.sigma_profile**2 * self.ring.x0 * (absR / self.ring.r0) * ((absR / self.ring.r0) - 1)    # new based on eq. 3 of Burkert(2010). Using sigma0^2*dlnrho/dlnr
 
         self.V2sigma = np.nan_to_num(self.V2sigma)
-        Vsigma_interim = np.copy(self.V2sigma)
-        Vsigma_interim[Vsigma_interim < 0] = 0
-        self.Vsigma = np.sqrt(Vsigma_interim) * np.sign(R_array)
+        # Vsigma_interim = np.copy(self.V2sigma)
+        # Vsigma_interim[Vsigma_interim < 0] = 0
+        self.Vsigma = np.sqrt(np.abs(self.V2sigma)) * np.sign(self.V2sigma)
 
         ### baryons velocity
         self.V2baryon = self.V2d + self.V2b + self.V2r
@@ -271,7 +271,7 @@ class RotationCurveObject:
         self.Vcirc = np.sqrt(np.maximum(0, self.V2circ)) * np.sign(R_array)
 
         ### correct for pressure support (Vrot)
-        self.V2rot = self.V2h + self.V2baryon - self.V2sigma
+        self.V2rot = self.V2h + self.V2baryon + self.V2sigma
         self.Vrot = np.sqrt(np.maximum(0, self.V2rot))
 
         ### final velocities

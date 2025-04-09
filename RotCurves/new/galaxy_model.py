@@ -65,7 +65,7 @@ class GalaxyObject:
         self.kpc_to_arcsec = 1/Planck18.arcsec_per_kpc_proper(self.z).value
 
         ## Instrument
-        self.sigma_inst = self.metadata['sigma_inst'] * 1e3
+        self.sigma_inst = self.metadata['sigma_inst']
         self.beam_FWHM = self.metadata['beam_FWHM ["]'] * self.kpc_to_arcsec
         self.sigma_beam = self.beam_FWHM / (2*np.sqrt(2*np.log(2)))
         self.apply_2D = self.metadata['apply 2D']
