@@ -3,7 +3,7 @@ from time import time_ns
 
 from astropy.constants.codata2018 import alpha
 
-from base_classes import DarkMatterHaloProfile
+from RotCurves.base_classes import DarkMatterHaloProfile
 from scipy.special import hyp2f1, gamma, gammainc
 
 class NFWHalo(DarkMatterHaloProfile):

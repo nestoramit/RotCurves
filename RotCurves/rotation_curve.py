@@ -5,13 +5,13 @@ from scipy.ndimage import gaussian_filter1d
 from scipy.interpolate import CubicSpline
 from scipy.signal import windows
 
-from baryons import *
-from dm_halos import *
-from base_utils import create_r_space
+from RotCurves.baryons import *
+from RotCurves.dm_halos import *
+from RotCurves.base_utils import create_r_space
 
 
 class RotationCurveObject:
-    def __init__(self, galaxy=None, edge=None, dx=None, rarray=None, sigma_inst=0., oversample=4., Halo=None, Disk=None, Ring=None, Bulge=None, sigma_dispersion=None,
+    def __init__(self, galaxy=None, edge=None, dx=None, rarray=None, sigma_inst=0., oversample=3., oversample_edge=1., Halo=None, Disk=None, Ring=None, Bulge=None, sigma_dispersion=None,
                  dispersion_function='const', pressure_support="general", inclination=90, sigma_beam=None, FWHM_beam=None, apply_2D=True, include_beam_smearing=True,
                  printtime=False, ndim=1., PA=0., radial_velocity=0):
         if printtime:
@@ -27,6 +27,7 @@ class RotationCurveObject:
         self.FWHM_beam = FWHM_beam
         self.apply_2D = apply_2D
         self.include_beam_smearing = include_beam_smearing
+        self.oversample_edge = oversample_edge
         self.oversample = oversample
 
         self.sigma_inst = sigma_inst
@@ -43,7 +44,7 @@ class RotationCurveObject:
         if galaxy is not None:
             self.dx = galaxy.dx
             self.edge = galaxy.edge
-            self.oversample = galaxy.oversample
+            self.oversample_edge = galaxy.oversample_edge
             self.sigma_inst = galaxy.sigma_inst
         elif edge is not None:
             if dx is None:
@@ -54,17 +55,20 @@ class RotationCurveObject:
             else:
                 self.dx = dx
                 self.edge = edge
-                self.oversample = oversample
+                self.oversample_edge = oversample_edge
                 self.sigma_inst = sigma_inst
         else:
             self.dx = dx
-            self.oversample = oversample
+            self.oversample_edge = oversample_edge
 
         if self.sigma_inst is None:
             self.sigma_inst = 0
 
-        if self.oversample is None:
-            self.oversample = 4
+        if self.oversample_edge is None:
+            self.oversample_edge = 4
+
+        # apply oversample to pixels scale
+        self.dx = self.dx / self.oversample_edge
 
         if rarray is not None:
             self.R_majoraxis = rarray
@@ -86,8 +90,8 @@ class RotationCurveObject:
             ### do a 1D rotation curve ###
             if not self.apply_2D:
                 # define the 1D radial spaces
-                self.sampling_edge = self.edge + self.oversample * self.sigma_beam
-                self.oversample_pixels = int(round(self.oversample * self.sigma_beam / self.dx))
+                self.sampling_edge = self.edge + self.oversample_edge * self.sigma_beam
+                self.oversample_pixels = int(round(self.oversample_edge * self.sigma_beam / self.dx))
                 self.sampling_rarray_1D = create_r_space(edge=self.sampling_edge, resolution=self.dx)
 
                 # create intrinsic RC for the sampling range
@@ -124,8 +128,8 @@ class RotationCurveObject:
                 self.sigma_beam_y = self.sigma_beam * geometrical_factor_elliptical
                 self.sigma_beam_pixels_x = int(round(self.sigma_beam_x / self.dx))
                 self.sigma_beam_pixels_y = int(round(self.sigma_beam_y / self.dx))
-                self.oversample_pixels_x = int(round(self.oversample * self.sigma_beam_pixels_x))
-                self.oversample_pixels_y = int(round(self.oversample * self.sigma_beam_pixels_y))
+                self.oversample_pixels_x = int(round(self.oversample_edge * self.sigma_beam_pixels_x))
+                self.oversample_pixels_y = int(round(self.oversample_edge * self.sigma_beam_pixels_y))
                 # self.sampling_edge_x = np.round(self.edge + self.oversample_pixels_x * self.dx, 1)
                 # self.sampling_edge_y = np.round(self.edge + self.oversample_pixels_y * self.dx, 1)
                 self.sampling_edge_x = self.edge + self.oversample_pixels_x * self.dx
@@ -405,8 +409,7 @@ def calculate_fraction_at_re(mass_components=None, reval=None):
         return 0.
     else:
         rc = RotationCurveObject(rarray=[reval], Halo=mass_components['halo'], Disk=mass_components['disk'],
-                                 Ring=mass_components['ring'], Bulge=mass_components['bulge'],
-                                 sigma_dispersion=0., pressure_support='general',
-                                 include_beam_smearing=False, apply_2D=False)
+                                 Ring=mass_components['ring'], Bulge=mass_components['bulge'], sigma_dispersion=0.,
+                                 pressure_support='general', apply_2D=False, include_beam_smearing=False)
         fraction = rc.V2h / (rc.V2h + rc.V2baryon)
         return fraction[0]

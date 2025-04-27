@@ -8,9 +8,8 @@ import astropy.constants as c
 import astropy.units as u
 import matplotlib.pyplot as plt
 
-from RotCurves.new.base_utils import integrate_quad_list
-from RotCurves.utils import load_gaussian_tables, M_solar
-from base_classes import SurfaceDensityProfile
+from RotCurves.base_utils import integrate_quad_list
+from RotCurves.base_classes import SurfaceDensityProfile
 
 # Define constants as global variables
 G_CONST = c.G.to('kpc km2 / (s2 Msun)').value
@@ -487,9 +486,6 @@ def test_freeman_sersic():
 
 
 if __name__ == '__main__':
-    from rotationcurves.models.models import GaussianRingObject
-
-
     test = LightFreemanDiskProfile(r_s=5)
     a = 0
     # M = 1e10

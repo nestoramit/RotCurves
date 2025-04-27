@@ -1,9 +1,9 @@
 import numpy as np
 import logging
 
-from RotCurves.new.dm_halos import alhpaNFWHalo
-from baryons import FreemanDisk, SersicProfile, GaussianRingProfile, LightFreemanDiskProfile, LightSersicProfile, LightGaussianRingProfile
-from dm_halos import NFWHalo, BurkertHalo, EinastoHalo, DekelZhaoHalo
+from RotCurves.dm_halos import alhpaNFWHalo
+from RotCurves.baryons import FreemanDisk, SersicProfile, GaussianRingProfile, LightFreemanDiskProfile, LightSersicProfile, LightGaussianRingProfile
+from RotCurves.dm_halos import NFWHalo, BurkertHalo, EinastoHalo, DekelZhaoHalo
 
 # Define the logger
 logging.basicConfig(level=logging.INFO)

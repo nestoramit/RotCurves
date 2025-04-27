@@ -1,13 +1,13 @@
 from time import time_ns
-
 import numpy as np
 import astropy.constants as c
 from astropy.cosmology import Planck18
 from scipy.special import j0, j1, k0
 from scipy.integrate import quad
 import warnings
-from base_utils import integrate_quad_list, solve_numerical_using_brentq
 import logging
+
+from RotCurves.base_utils import integrate_quad_list, solve_numerical_using_brentq
 
 # Define constants as global variables
 G_CONST = c.G.to('kpc km2 / (s2 Msun)').value

@@ -1,43 +1,29 @@
-from utils import *
-# from rotationcurves.plotting import *
-import corner
+import os
+import logging
+import time
+import datetime
+import numpy as np
+import pandas as pd
 import emcee
+import corner
+import parmap
+import matplotlib.pyplot as plt
+from matplotlib import patches as mpl_patches
+from multiprocessing import Pool
+from scipy.interpolate import CubicSpline
+from matplotlib.ticker import MultipleLocator
 
-from classes import create_components, RotationCurveObject, calculate_fraction_at_re
-from scaling_relations import Mvir_Moster2018
+from RotCurves.base_utils import figure, colors
+from RotCurves.rotation_curve import RotationCurveObject, calculate_fraction_at_re
+from RotCurves.mass_model import create_components
 
-# import rotationcurves.models.models as models
-# import rotationcurves.models.helper_functions as help
-# import rotationcurves.models.lookup_table as thick_vel
-# import matplotlib.transforms as mtrans
-
+# Define the logger
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger('RotCurves')
 
 """
-----------------------------------------------------------------------------------------------------------------------
----------------------------------------------------MCMC Functions-----------------------------------------------------
-----------------------------------------------------------------------------------------------------------------------
-
-create_mcmc_variables
----------------------
-Initializing the parameters fed to the mcmc sampler given:
-(i) galaxy with priors 
-(ii) nwalkers from the mcmc_hyperparameters
-
-
-unpack_values_from_theta
-------------------------
-retrieving the real-scaled parameters from a sampler in the MCMC chain given:
-(i) theta of mcmc values
-(ii) galaxy object (switches, scales)
-
-
-unpack_mcmc_walker_results
---------------------------
-Creating a dictionary containing the outputs results from the MCMC sampler in the shape of array of arrays. 
+These functions are used to create MCMC variables, unpack values from theta, and add f to theta and samples.
 """
-
 
 def create_mcmc_variables(galaxy, mcmc_hparameters):
     initial_values = []
@@ -72,8 +58,8 @@ def unpack_values_from_theta(theta, galaxy):
         else:
             parameters[parameter] = float(galaxy.priors[parameter].initial)
 
-    if switches["use Moster"] == 1:
-        parameters['M_vir'] = Mvir_Moster2018(galaxy.z, parameters['M_baryon'])
+    # if switches["use Moster"] == 1:
+    #     parameters['M_vir'] = Mvir_Moster2018(galaxy.z, parameters['M_baryon'])
 
     return parameters
 
@@ -103,8 +89,8 @@ def unpack_mcmc_walker_results(samples, nwalkers, galaxy, mcmc_hparameters):
         RC = RotationCurveObject(galaxy=galaxy, Halo=mass_components['halo'], Disk=mass_components['disk'],
                                  Ring=mass_components['ring'], Bulge=mass_components['bulge'],
                                  sigma_dispersion=model_params['sigma'], pressure_support=galaxy.pressure_support,
-                                 inclination=model_params['i'], sigma_beam=galaxy.sigma_beam,
-                                 apply_2D=galaxy.apply_2D, include_beam_smearing=True)
+                                 inclination=model_params['i'], sigma_beam=galaxy.sigma_beam, apply_2D=galaxy.apply_2D,
+                                 include_beam_smearing=True)
 
         mcmc_fluxes.append(RC.smeared_light_profile)
         mcmc_rotation_curves.append(RC.smeared_with_inclination)
@@ -138,9 +124,9 @@ def add_f_to_theta(galaxy, theta, mcmc_hparameters):
 
     if mass_components['halo'] is not None:
         if mass_components['disk'] is not None:
-            fraction_i = calculate_fraction_at_re(mass_components=mass_components, reval=model_params['Re']*kpc)
+            fraction_i = calculate_fraction_at_re(mass_components=mass_components, reval=model_params['Re'])
         elif mass_components['ring'] is not None:
-            fraction_i = calculate_fraction_at_re(mass_components=mass_components, reval=model_params['R_peak']*kpc)
+            fraction_i = calculate_fraction_at_re(mass_components=mass_components, reval=model_params['R_peak'])
         else:
             fraction_i = 0
             logger.warning('No disk or ring component, cant evaluate DM fractions! Setting f=0...')
@@ -169,12 +155,43 @@ def add_f_to_samples_mp(idx, galaxy, samples, mcmc_hparameters):
 
 
 """
-----------------------------------------------------------------------------------------------------------------------
----------------------------------------------------MCMC RUN-----------------------------------------------------------
-----------------------------------------------------------------------------------------------------------------------
+This class is used to create the priors for the MCMC fitting.
 """
+class Prior:
+    def __init__(self, type, initial_value, min_value, max_value, gauss_sigma):
+        self.type = self.type_altnames(type)
+        self.initial = initial_value
+        self.min = min_value
+        self.max = max_value
+        self.sig = gauss_sigma
 
+    def type_altnames(self, type):
+        if type in [ 'fixed', 'Fixed']:
+            return 'fixed'
+        if type in ['uniform', 'u', 'Uniform', 'flat', 'f']:
+            return 'uniform'
+        elif type in ['gaussian', 'g', 'Gaussian']:
+            return 'gaussian'
+        else:
+            raise ValueError(f"Unknown prior type: {self.type}")
 
+    def lnprob(self, value):
+        if self.type == 'fixed':
+            return 0.0
+        elif self.min <= value <= self.max:
+            if self.type == 'uniform':
+                return 0.0
+            if self.type == 'gaussian':
+                return -1/2 * ((value - self.initial) / self.sig)**2
+        else:
+            return - np.inf
+
+"""
+These functions are used to calculate the log-prior and log-likelihood of the MCMC fitting.
+The log-prior is calculated based on the priors defined in the galaxy model object.
+The log-likelihood is calculated based on the data and the model, via least squares.
+
+"""
 def lnprior(theta, galaxy):
     '''
     :param theta: model parameters.
@@ -200,16 +217,8 @@ def lnprior(theta, galaxy):
         else:
             value = prior.initial
 
-        # If value is out of range return inf, if in range update the lnprob
-        if value < prior.min or value > prior.max:
-            return -np.inf
-
-        # If the parameter is fitted for, add its logprob based on the prior
-        if switches["parameters"][parameter]:
-            if prior.type == "f":
-                lp += 0
-            elif prior.type == "g":
-                lp += np.log(gaussian(value, mu=prior.initial, sig=prior.sig))
+        # update the log-prior
+        lp += prior.lnprob(value)
 
         # For B/T, check if the minimal bulge critirea for a ring is OK
         if galaxy.fit_goals['velocity'] or galaxy.fit_goals['dispersion']:
@@ -217,8 +226,7 @@ def lnprior(theta, galaxy):
                 BT_value = value
                 if galaxy.mass_components_switches['ring'] and BT_value != 0:
                     if galaxy.mass_components['ring']._is_massive():
-                        galaxy.mass_components['ring'].find_minimal_bulge()
-                        if BT_value < galaxy.mass_components['ring'].BT_min:
+                        if BT_value < galaxy.mass_components['ring'].min_stabilizing_mass():
                             return -np.inf
 
         # For D/T, check it against B/T to make sure it is <= 1.
@@ -248,10 +256,10 @@ def get_RC_from_theta_for_lnlike(theta, galaxy, mcmc_hparameters):
         running_in_cluster=mcmc_hparameters['running in cluster'], apply2D=galaxy.apply_2D)
 
     RC = RotationCurveObject(galaxy=galaxy, Halo=mass_components['halo'], Disk=mass_components['disk'],
-                                    Ring=mass_components['ring'], Bulge=mass_components['bulge'],
-                                    sigma_dispersion=model_params['sigma'], pressure_support=galaxy.pressure_support,
-                                    inclination=model_params['i'], sigma_beam=galaxy.sigma_beam,
-                                    apply_2D=galaxy.apply_2D, include_beam_smearing=True)
+                             Ring=mass_components['ring'], Bulge=mass_components['bulge'],
+                             sigma_dispersion=model_params['sigma'], pressure_support=galaxy.pressure_support,
+                             inclination=model_params['i'], sigma_beam=galaxy.sigma_beam, apply_2D=galaxy.apply_2D,
+                             include_beam_smearing=True)
 
     return RC
 
@@ -272,25 +280,25 @@ def lnlike(theta, galaxy, mcmc_hparameters):
     if galaxy.fit_goals['flux']:
         prob = update_prob(prob=prob,
                            xdata=x, ydata=galaxy.rawdata_flux, ydata_err=galaxy.rawdata_flux_err,
-                           xinterp=galaxy.radial_space["array"] / kpc, yinterp=RC.smeared_light_profile)
+                           xinterp=galaxy.radial_space["array"], yinterp=RC.smeared_light_profile)
 
     # update lnprob from velocity fit
     if galaxy.fit_goals['velocity']:
         prob = update_prob(prob=prob,
                            xdata=x, ydata=galaxy.rawdata_V, ydata_err=galaxy.rawdata_V_err,
-                           xinterp=galaxy.radial_space["array"] / kpc, yinterp=RC.smeared_with_inclination)
+                           xinterp=galaxy.radial_space["array"], yinterp=RC.smeared_with_inclination)
 
     # update lnprob from dispersion fit
     if galaxy.fit_goals['dispersion']:
         prob = update_prob(prob=prob,
                            xdata=x, ydata=galaxy.rawdata_disp, ydata_err=galaxy.rawdata_disp_err,
-                           xinterp=galaxy.radial_space["array"] / kpc, yinterp=RC.velocity_dispersion)
+                           xinterp=galaxy.radial_space["array"], yinterp=RC.velocity_dispersion)
 
     return prob
 
 
 def update_prob(prob, xdata, ydata, ydata_err, xinterp, yinterp):
-    interpolator = scp_interp.CubicSpline(x=xinterp, y=yinterp)
+    interpolator = CubicSpline(x=xinterp, y=yinterp)
     y_predicted = interpolator(xdata)
     to_keep = np.argwhere(np.logical_not(np.isnan(ydata)))
 
@@ -300,15 +308,32 @@ def update_prob(prob, xdata, ydata, ydata_err, xinterp, yinterp):
 
 def lnprob(theta, galaxy, mcmc_hparameters):
     lp = lnprior(theta, galaxy)
-    if not np.isfinite(lp):
+    if not np.isfinite(lp) or np.isnan(lp):
         return -np.inf
     else:
         lk = lnlike(theta, galaxy, mcmc_hparameters)
-        if np.isnan(lk):
+        if not np.isfinite(lk) or np.isnan(lk):
             return -np.inf
         else:
             return lp + lk
 
+"""
+Functions to run the mcmc fitter
+"""
+
+def find_maximum_frequency(data_array, bins, axis=0):
+    '''
+    find the most frequent value in a binned histogram of an array.
+    works on a columns-basis in the given data_array.
+    '''
+
+    N = data_array.shape[1]
+    argmax_array = [np.argmax(np.histogram(data_array[:, i], bins=bins)[0]) for i in range(N)]
+    max_freq_lower_values = [np.histogram(data_array[:, i], bins=bins)[1][argmax_array[i]] for i in range(N)]
+    max_freq_upper_values = [np.histogram(data_array[:, i], bins=bins)[1][argmax_array[i] + 1] for i in range(N)]
+    max_freq_values = np.average([max_freq_lower_values, max_freq_upper_values], axis=0)
+
+    return max_freq_values
 
 def check_convergence(sampler, mcmc_hparameters, old_taus):
     aurocorrelation_steps_thersh = mcmc_hparameters['aurocorrelation_steps_thersh']
@@ -348,9 +373,9 @@ def run_sampler(mcmc_hparameters, sampler, p0):
     niters_converged = niter
 
     niter_to_run = min(niter, niter_per_loop)
-    num_of_loops = math.ceil(niter / niter_per_loop)
+    num_of_loops = int(np.ceil(niter / niter_per_loop))
     old_taus = np.zeros(sampler.ndim)
-    for idx in range(1, num_of_loops+1, 1):
+    for idx in range(1, int(num_of_loops)+1, 1):
         pos, prob, state = sampler.run_mcmc(initial_state=p0_new, nsteps=niter_to_run, progress=(not bool(mcmc_hparameters["running in cluster"])))
 
         logger.info('autocorrelation time after %3d iterations: %s' % (sampler.iteration, emcee.autocorr.integrated_time(sampler.chain, tol=0)))
@@ -402,15 +427,15 @@ def run_mcmc(galaxy, mcmc_hparameters):
     logger.info("Adding fractions & arranging data...")
     samples = sampler.flatchain
 
-    if switches["use Moster"] and switches["parameters"]["M_vir"]:
-        for theta in samples:
-            mvir_idx = list(switches["parameters"].keys()).index("M_vir")
-            mbar_idx = list(switches["parameters"].keys()).index("M_baryon")
-            if isinstance(galaxy.scales["M_baryon"], (float, int)) and isinstance(galaxy.scales["M_vir"], (float, int)):
-                theta[mvir_idx] = Mvir_Moster2018(galaxy.z, theta[mbar_idx] * galaxy.scales["M_baryon"]) / galaxy.scales["M_vir"]
-            elif galaxy.scales["M_baryon"] == "log_mass" and galaxy.scales["M_vir"] == "log_mass":
-                theta[mvir_idx] = np.log10(
-                    Mvir_Moster2018(galaxy.z, np.power(10, theta[mbar_idx]) * M_solar) / M_solar)
+    # if switches["use Moster"] and switches["parameters"]["M_vir"]:
+    #     for theta in samples:
+    #         mvir_idx = list(switches["parameters"].keys()).index("M_vir")
+    #         mbar_idx = list(switches["parameters"].keys()).index("M_baryon")
+    #         if isinstance(galaxy.scales["M_baryon"], (float, int)) and isinstance(galaxy.scales["M_vir"], (float, int)):
+    #             theta[mvir_idx] = Mvir_Moster2018(galaxy.z, theta[mbar_idx] * galaxy.scales["M_baryon"]) / galaxy.scales["M_vir"]
+    #         elif galaxy.scales["M_baryon"] == "log_mass" and galaxy.scales["M_vir"] == "log_mass":
+    #             theta[mvir_idx] = np.log10(
+    #                 Mvir_Moster2018(galaxy.z, np.power(10, theta[mbar_idx]) * M_solar) / M_solar)
 
     if switches["fractions"]:
         ndim += 1
@@ -471,12 +496,11 @@ def full_mcmc_run(galaxy, mcmc_hparameters):
         ring_FWHM=bestfit_params['ring_FWHM'], ring_lw=galaxy.ring_lw,
         running_in_cluster=mcmc_hparameters["running in cluster"], apply2D=galaxy.apply_2D)
 
-    bestfit_RC = RotationCurveObject(
-        galaxy=galaxy, Halo=bestfit_mass_components['halo'], Disk=bestfit_mass_components['disk'],
-        Ring=bestfit_mass_components['ring'], Bulge=bestfit_mass_components['bulge'],
-        sigma_dispersion=bestfit_params['sigma'], pressure_support=galaxy.pressure_support,
-        inclination=bestfit_params['i'], sigma_beam=galaxy.sigma_beam,
-        apply_2D=galaxy.apply_2D, include_beam_smearing=True)
+    bestfit_RC = RotationCurveObject(galaxy=galaxy, Halo=bestfit_mass_components['halo'],
+                                     Disk=bestfit_mass_components['disk'], Ring=bestfit_mass_components['ring'],
+                                     Bulge=bestfit_mass_components['bulge'], sigma_dispersion=bestfit_params['sigma'],
+                                     pressure_support=galaxy.pressure_support, inclination=bestfit_params['i'],
+                                     sigma_beam=galaxy.sigma_beam, apply_2D=galaxy.apply_2D, include_beam_smearing=True)
 
     galaxy.bestfit_chisq = red_chisq(galaxy, bestfit_RC)
 
@@ -522,44 +546,42 @@ def save_fit_profiles(galaxy, RC):
     out_df_data = pd.DataFrame(columns=['r [kpc]', 'r [arcsec]', 'v_data', 'v_data_err', 'v_model', 'disp_data', 'disp_data_err', 'disp_model'])
     out_df_intrinsic = pd.DataFrame(columns=['r [kpc]', 'mass_cum [solMass]', 'v_circ', 'v_rot', 'v_dm', 'v_baryon'])
 
-    Rarray = galaxy.radial_space['array'] / kpc
+    Rarray = galaxy.radial_space['array']
 
     out_df_data['r [kpc]'] = galaxy.rawdata_r
     out_df_data['r [arcsec]'] = galaxy.rawdata_r / galaxy.kpc_to_arcsec
-    interpolator = scp_interp.CubicSpline(x=Rarray, y=RC.smeared_with_inclination)
+    interpolator = CubicSpline(x=Rarray, y=RC.smeared_with_inclination)
     out_df_data['v_data'] = galaxy.rawdata_V
     out_df_data['v_data_err'] = galaxy.rawdata_V_err
     out_df_data['v_model'] = interpolator(galaxy.rawdata_r)
-    interpolator = scp_interp.CubicSpline(x=Rarray, y=RC.velocity_dispersion)
+    interpolator = CubicSpline(x=Rarray, y=RC.velocity_dispersion)
     out_df_data['disp_data'] = galaxy.rawdata_disp
     out_df_data['disp_data_err'] = galaxy.rawdata_disp_err
     out_df_data['disp_model'] = interpolator(galaxy.rawdata_r)
 
     out_df_intrinsic['r [kpc]'] = Rarray
-    out_df_intrinsic['v_circ'] = RC.intrinsic_no_dispersion * 1e-3
-    out_df_intrinsic['v_rot'] = RC.intrinsic * 1e-3
-    out_df_intrinsic['v_baryon'] = RC.Vbaryon * 1e-3
+    out_df_intrinsic['v_circ'] = RC.intrinsic_no_dispersion
+    out_df_intrinsic['v_rot'] = RC.intrinsic
+    out_df_intrinsic['v_baryon'] = RC.Vbaryon
     if RC.halo is not None:
-        out_df_intrinsic['v_dm'] = RC.Vh * 1e-3
+        out_df_intrinsic['v_dm'] = RC.Vh
     if RC.disk is not None:
-        out_df_intrinsic['v_disk'] = RC.Vd * 1e-3
+        out_df_intrinsic['v_disk'] = RC.Vd
     if RC.ring is not None:
-        out_df_intrinsic['v_ring'] = RC.Vr * 1e-3
+        out_df_intrinsic['v_ring'] = RC.Vr
     if RC.bulge is not None:
-        out_df_intrinsic['v_bulge'] = RC.Vb * 1e-3
+        out_df_intrinsic['v_bulge'] = RC.Vb
 
-    mass_cum = np.zeros_like(Rarray)
+    menc = np.zeros_like(Rarray)
     if RC.halo is not None:
-        RC.halo.get_mass_profile(Rarray*kpc)
-        mass_cum += RC.halo.mass_profile
+        menc += RC.halo.menc(Rarray)
     if RC.bulge is not None:
-        mass_cum += RC.bulge.mass_function(Rarray*kpc)
+        menc += RC.bulge.menc(Rarray)
     if RC.disk is not None:
-        mass_cum += RC.disk.mass_function(Rarray*kpc)
+        menc += RC.disk.menc(Rarray)
     if RC.ring is not None:
-        RC.ring.get_profiles(Rarray*kpc)
-        mass_cum += RC.ring.mass_profile
-    out_df_intrinsic['mass_cum [solMass]'] = mass_cum / M_solar
+        menc += RC.ring.menc(Rarray)
+    out_df_intrinsic['mass_cum [solMass]'] = menc
 
     out_df_intrinsic = out_df_intrinsic[out_df_intrinsic['r [kpc]'] >= 0]
 
@@ -568,24 +590,24 @@ def save_fit_profiles(galaxy, RC):
 
 
 def red_chisq(galaxy, RC):
-    R_array = galaxy.radial_space["array"] / kpc
+    R_array = galaxy.radial_space["array"]
     x_data = galaxy.rawdata_r
 
     chisq_flux = 0
     if galaxy.fit_goals['flux']:
-        interpolator_flux = scp_interp.CubicSpline(x=R_array, y=RC.smeared_light_profile)
+        interpolator_flux = CubicSpline(x=R_array, y=RC.smeared_light_profile)
         flux_matched = interpolator_flux(x_data)
         chisq_flux = np.sum(np.power((flux_matched - galaxy.rawdata_flux) / galaxy.rawdata_flux_err, 2))
 
     chisq_vel = 0
     if galaxy.fit_goals['velocity']:
-        interpolator_vel = scp_interp.CubicSpline(x=R_array, y=RC.smeared_with_inclination)
+        interpolator_vel = CubicSpline(x=R_array, y=RC.smeared_with_inclination)
         vel_matched = interpolator_vel(x_data)
         chisq_vel = np.sum(np.power((vel_matched - galaxy.rawdata_V) / galaxy.rawdata_V_err, 2))
 
     chisq_disp = 0
     if galaxy.fit_goals['dispersion']:
-        interpolator_disp = scp_interp.CubicSpline(x=R_array, y=RC.velocity_dispersion)
+        interpolator_disp = CubicSpline(x=R_array, y=RC.velocity_dispersion)
         disp_matched = interpolator_disp(x_data)
         chisq_disp = np.sum(np.power((disp_matched - galaxy.rawdata_disp) / galaxy.rawdata_disp_err, 2))
 
@@ -671,30 +693,30 @@ Prior information:\n%s''' % sep
 
     component = 'disk'
     if galaxy.mass_components[component] is not None:
-        M_disk = np.log10(bestfit_mass_components[component].mass / M_solar)
-        Re = bestfit_mass_components[component].re / kpc
+        M_disk = np.log10(bestfit_mass_components[component].mass)
+        Reff = bestfit_mass_components[component].r_eff
         disk_n = bestfit_mass_components[component].n
-        disk_invq = bestfit_mass_components[component].invq
-        disk_lw = bestfit_mass_components[component].light_weighting
+        disk_q = bestfit_mass_components[component].q0
+        disk_mass_to_light = bestfit_mass_components[component].mass_to_light
         s_comp = '\n%s:\n' \
                  '    logmass:%s %2.2f   [solmass]\n' \
                  '    reff:%s %2.2f    [kpc]\n' \
                  '    n_sersic:%s %2.1f     []\n' \
-                 '    invq:%s %2.2f    []\n' \
-                 '    light:%s %s\n' % (component,
+                 '    q0:%s %2.2f    []\n' \
+                 '    M/L:%s %s\n' % (component,
                                       ' '*(num_spaces - len('logmass')), M_disk,
-                                      ' '*(num_spaces - len('reff')), Re,
+                                      ' '*(num_spaces - len('reff')), Reff,
                                       ' '*(num_spaces - len('n_sersic')), disk_n,
-                                      ' '*(num_spaces - len('invq')), disk_invq,
-                                      ' '*(num_spaces - len('light')), bool(disk_lw))
+                                      ' '*(num_spaces - len('invq')), disk_q,
+                                      ' '*(num_spaces - len('light')), disk_mass_to_light)
         f.write(s_comp)
 
     component = 'ring'
     if galaxy.mass_components[component] is not None:
-        M_ring = np.log10(bestfit_mass_components[component].mass / M_solar)
-        Rpeak = bestfit_mass_components[component].rpeak / kpc
-        FWHM = bestfit_mass_components[component].FWHM / kpc
-        ring_lw = bestfit_mass_components[component].light_weighting
+        M_ring = np.log10(bestfit_mass_components[component].mass)
+        Rpeak = bestfit_mass_components[component].r_s
+        FWHM_ring = bestfit_mass_components[component].FWHM_ring
+        ring_mass_to_light = bestfit_mass_components[component].mass_to_light
         s_comp = '%s\n%s:\n' \
                  '    logmass:%s %2.2f   [solmass]\n' \
                  '    r_peak:%s %2.2f    [kpc]\n' \
@@ -702,47 +724,45 @@ Prior information:\n%s''' % sep
                  '    light:%s %s\n' % (minisep, component,
                                       ' '*(num_spaces - len('logmass')), M_ring,
                                       ' '*(num_spaces - len('r_peak')), Rpeak,
-                                      ' '*(num_spaces - len('ring_FWHM')), FWHM,
-                                      ' '*(num_spaces - len('light')), bool(ring_lw))
+                                      ' '*(num_spaces - len('ring_FWHM')), FWHM_ring,
+                                      ' '*(num_spaces - len('light')), ring_mass_to_light)
         f.write(s_comp)
 
     component = 'bulge'
     if galaxy.mass_components[component] is not None:
-        M_bulge = np.log10(bestfit_mass_components[component].mass / M_solar)
-        bulge_Re = bestfit_mass_components[component].re / kpc
+        M_bulge = np.log10(bestfit_mass_components[component].mass)
+        bulge_Reff = bestfit_mass_components[component].r_eff
         bulge_n = bestfit_mass_components[component].n
-        bulge_invq = bestfit_mass_components[component].invq
-        bulge_lw = bestfit_mass_components[component].light_weighting
+        bulge_q = bestfit_mass_components[component].q0
+        bulge_mass_to_light = bestfit_mass_components[component].mass_to_light
         s_comp = '%s\n%s:\n' \
                  '    logmass:%s %2.2f   [solmass]\n' \
                  '    reff:%s %2.2f    [kpc]\n' \
                  '    n_sersic:%s %2.1f     []\n' \
-                 '    invq:%s %2.2f    []\n' \
-                 '    light:%s %s\n' % (minisep, component,
+                 '    q0:%s %2.2f    []\n' \
+                 '    M/L:%s %s\n' % (minisep, component,
                                                    ' '*(num_spaces - len('logmass')), M_bulge,
-                                                   ' '*(num_spaces - len('reff')), bulge_Re,
+                                                   ' '*(num_spaces - len('reff')), bulge_Reff,
                                                    ' '*(num_spaces - len('n_sersic')), bulge_n,
-                                                   ' '*(num_spaces - len('invq')), bulge_invq,
-                                                   ' '*(num_spaces - len('light')), bool(bulge_lw))
+                                                   ' '*(num_spaces - len('invq')), bulge_q,
+                                                   ' '*(num_spaces - len('light')), bulge_mass_to_light)
         f.write(s_comp)
 
     component = 'halo'
     if galaxy.mass_components[component] is not None:
         f_dm = results_table.loc['f']['median']
-        M_vir = np.log10(bestfit_mass_components[component].mass / M_solar)
+        M_vir = np.log10(bestfit_mass_components[component].mass)
         c = bestfit_mass_components[component].c
         alpha = bestfit_mass_components[component].alpha
         s_comp = '%s\n%s:\n' \
                  '    f_dm:%s %2.2f    []\n' \
                  '    logmass:%s %2.2f   [solmass]\n' \
                  '    conc:%s %2.2f    []\n' \
-                 '    alpha:%s %2.2f    []\n' \
-                 '    light:%s %s\n' % (minisep, component,
-                                                   ' '*(num_spaces - len('f_dm')), f_dm,
-                                                   ' '*(num_spaces - len('logmass')), M_vir,
-                                                   ' '*(num_spaces - len('conc')), c,
-                                                   ' '*(num_spaces - len('alpha')), alpha,
-                                                   ' '*(num_spaces - len('light')), False)
+                 '    alpha:%s %2.2f    []\n' % (minisep, component,
+                                                 ' '*(num_spaces - len('f_dm')), f_dm,
+                                                 ' '*(num_spaces - len('logmass')), M_vir,
+                                                 ' '*(num_spaces - len('conc')), c,
+                                                 ' '*(num_spaces - len('alpha')), alpha)
         f.write(s_comp)
 
     component = 'dispersion'
@@ -799,12 +819,10 @@ mean auto-correlation time (tau):    %2.2f
 
     f.close()
 
-"""
-----------------------------------------------------------------------------------------------------------------------
----------------------------------------------------MCMC PLOTTING------------------------------------------------------
-----------------------------------------------------------------------------------------------------------------------
-"""
 
+"""
+Functions to plot and analyze mcmc results
+"""
 
 def cornerplot_labels(switches, add_f=True):
     labels = []
@@ -856,8 +874,8 @@ def plot_mcmcWalkers(sampler, galaxy, mcmc_hparameters, show_plot=False, output_
         ax = axes[i]
         ax.plot(x, samples_walkers[:, :, i], alpha=0.5, lw=0.5, color=colors['grey'])
         ax.set_xlim(1, niters_converged)
-        ax.xaxis.set_major_locator(MultipleLocator(math.ceil(niters_converged / 4)))
-        ax.xaxis.set_minor_locator(MultipleLocator(max(1, math.ceil(math.ceil(niters_converged / 4) / 4))))
+        ax.xaxis.set_major_locator(MultipleLocator(np.ceil(niters_converged / 4)))
+        ax.xaxis.set_minor_locator(MultipleLocator(max(1, np.ceil(np.ceil(niters_converged / 4) / 4))))
         ax.set_ylabel(labels[i], fontsize=20)
         ax.yaxis.set_label_coords(-0.1, 0.5)
         # ax.set_title(r"$\tau$=%s" % np.round(tau[i], 0))
@@ -914,11 +932,12 @@ def plot_mcmcCornerplot(samples_with_f, results_table, galaxy, show_plot=False, 
                 # plot prior prob
                 if galaxy.priors[param].type == 'g':
                     x = np.linspace(ax.get_xlim()[0], ax.get_xlim()[1], num=100)
-                    y = gaussian(x=x, mu=galaxy.priors[param].initial, sig=galaxy.priors[param].sig)
+                    y = np.exp(galaxy.priors[param].lnprob(x))
+                    # y = gaussian(x=x, mu=galaxy.priors[param].initial, sig=galaxy.priors[param].sig)
                     ax.plot(x, y * ax.get_ylim()[1] * 0.9, color=colors['pink'], lw=1.5, ls=':')
                 elif galaxy.priors[param].type == 'f':
                     x = np.linspace(ax.get_xlim()[0], ax.get_xlim()[1], num=100)
-                    y = gaussian(x=x, mu=galaxy.priors[param].initial, sig=1000)
+                    y = np.ones_like(x)
                     ax.plot(x, y * ax.get_ylim()[1] * 0.9, color=colors['pink'], lw=1.5, ls=':')
 
                 # plot MAP
@@ -947,7 +966,7 @@ def plot_single_bestfit(rawdata_x, rawdata_y, rawdata_yerr, model_x, model_y, ax
                        ms=5, color=color_data, fmt='s', capsize=2., capthick=1., label='data')
     ax_values.plot(model_x, model_y, color=color_model, lw=1.5)
 
-    interpolator = scp_interp.CubicSpline(x=model_x, y=model_y)
+    interpolator = CubicSpline(x=model_x, y=model_y)
     y_bestfit = interpolator(rawdata_x)
     ax_values.scatter(rawdata_x, y_bestfit,
                       color=color_model, marker='s', s=40, label='model')
@@ -968,7 +987,7 @@ def plot_bestfit(galaxy, RC, output_plot=True):
     axes = axes.flatten()
     i = 0
 
-    R_array = galaxy.radial_space["array"] / kpc
+    R_array = galaxy.radial_space["array"]
     for fit_goal in galaxy.fit_goals:
         if galaxy.fit_goals[fit_goal]:
 
@@ -1025,7 +1044,7 @@ def plot_bestfit(galaxy, RC, output_plot=True):
                 beam_FWHM_in_plot_size = galaxy.beam_FWHM / (axes[i].get_xlim()[1] - axes[i].get_xlim()[0])
                 beam_FWHM_x = galaxy.beam_FWHM
                 beam_FWHM_y = beam_FWHM_in_plot_size * y_scale
-                ellipse = mpl.patches.Ellipse(xy=(axes[i].get_xlim()[1]*0.7, axes[i].get_ylim()[0]*0.7), width=beam_FWHM_x, height=beam_FWHM_y,
+                ellipse = mpl_patches.Ellipse(xy=(axes[i].get_xlim()[1]*0.7, axes[i].get_ylim()[0]*0.7), width=beam_FWHM_x, height=beam_FWHM_y,
                                               edgecolor=colors['grey'], fc=colors['grey'], alpha=0.8, lw=0.5)
                 axes[i].add_patch(ellipse)
 
@@ -1060,20 +1079,20 @@ def plot_intrinsicRC(galaxy=None, RC=None, R_array=None, output_plot=True):
     red = (218/255, 51/255, 51/255, 0.85)
 
     if R_array is None:
-        R_array = galaxy.radial_space["array"] / kpc
+        R_array = galaxy.radial_space["array"]
 
     fig, ax = plt.subplots(figsize=(5, 5))
     # ax.plot(R_array, RC.smeared_with_inclination, "-", lw=2, color=red, label="$V_{obs}$")
-    ax.plot(R_array, RC.intrinsic * 1e-3, "-", lw=2, color=red, label="$V_{rot}$")
-    ax.plot(R_array, RC.intrinsic_no_dispersion * 1e-3, "-", lw=2, color=blue, label="$V_{circ}$")
-    ax.plot(R_array, RC.Vh * 1e-3, "-", lw=2, color=black, label="$V_{DM}$")
-    ax.plot(R_array, RC.Vbaryon * 1e-3, "-", lw=2, color=green, label="$V_{baryons}$")
+    ax.plot(R_array, RC.intrinsic, "-", lw=2, color=red, label="$V_{rot}$")
+    ax.plot(R_array, RC.intrinsic_no_dispersion, "-", lw=2, color=blue, label="$V_{circ}$")
+    ax.plot(R_array, RC.Vh, "-", lw=2, color=black, label="$V_{DM}$")
+    ax.plot(R_array, RC.Vbaryon, "-", lw=2, color=green, label="$V_{baryons}$")
     if np.sum(RC.V2b) > 0:
-        ax.plot(R_array, RC.Vb * 1e-3, ":", lw=2, color=green_light, label="$V_{bulge}$")
+        ax.plot(R_array, RC.Vb, ":", lw=2, color=green_light, label="$V_{bulge}$")
     if np.sum(RC.V2d) > 0:
-        ax.plot(R_array, RC.Vd * 1e-3, "--", lw=2, color=green_light, label="$V_{disk}$")
+        ax.plot(R_array, RC.Vd, "--", lw=2, color=green_light, label="$V_{disk}$")
     if np.sum(RC.V2r) > 0:
-        ax.plot(R_array, RC.Vr * 1e-3, "-.", lw=2, color=green_light, label="$V_{ring}$")
+        ax.plot(R_array, RC.Vr, "-.", lw=2, color=green_light, label="$V_{ring}$")
 
     ax.axhline(y=0, color=colors['grey'], lw=1)
     ax.legend(loc='upper right')
@@ -1103,7 +1122,7 @@ def plot_mcmcFluxes(mcmc_fluxes, galaxy, show_plot=False, output_plot=True):
 
     fig, ax = plt.subplots()
     for mcmc_flux in mcmc_fluxes:
-        ax.plot(R / kpc, mcmc_flux, color="g", alpha=0.1)
+        ax.plot(R, mcmc_flux, color="g", alpha=0.1)
     ax.errorbar(galaxy.rawdata_r, galaxy.rawdata_flux, galaxy.rawdata_flux_err, color='k', fmt=".", label="data")
 
     # ax.set_title("%s - Rotation Curves\n"
@@ -1142,7 +1161,7 @@ def plot_mcmcCurves(mcmc_rotation_curves, galaxy, show_plot=False, output_plot=T
 
     fig, ax = plt.subplots()
     for mcmc_curve in mcmc_rotation_curves:
-        ax.plot(R / kpc, mcmc_curve, color="g", alpha=0.1)
+        ax.plot(R, mcmc_curve, color="g", alpha=0.1)
     ax.errorbar(galaxy.rawdata_r, galaxy.rawdata_V, galaxy.rawdata_V_err, color='k', fmt=".", label="data")
 
     # ax.set_title("%s - Rotation Curves\n"
@@ -1184,7 +1203,7 @@ def plot_mcmcDispersion(mcmc_dispersion, galaxy, show_plot=False, output_plot=Tr
 
     fig, ax = plt.subplots()
     for dispersion in mcmc_dispersion:
-        ax.plot(galaxy.radial_space["array"] / kpc, dispersion, color="g", alpha=0.1)
+        ax.plot(galaxy.radial_space["array"], dispersion, color="g", alpha=0.1)
     ax.errorbar(galaxy.rawdata_r, galaxy.rawdata_disp, galaxy.rawdata_disp_err, color='k', fmt=".", label="data")
 
     # ax.set_title("%s - Velocity Dispersion\n"

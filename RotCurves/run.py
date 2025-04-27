@@ -1,13 +1,17 @@
-from utils import *
-from classes import GalaxyObject
+import os
+import sys
+import pandas as pd
+import time
+import numpy as np
+
+from galaxy_model import GalaxyObject
+from base_utils import make_pretty_plot
 
 sys.path.insert(0, r"/mnt/sdceph/users/ycohen/Nestor/scripts")
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from RotCurves.mcmc_functions import full_mcmc_run
+from mcmc_fitter import full_mcmc_run
 
-# ---------------------------------------------------------------------------------------------------------------- #
-# ---------------------------------------------------------------------------------------------------------------- #
 
 def retrieve_run_info(num_walkers=300, num_burnins=100, num_steps=250, strecth_move_a=5., mp=True,
                       Galaxies_to_run=["all"], show_plots=False, output=True, metadata_table_path=None, galaxies_outputs_dir=None):
@@ -104,4 +108,4 @@ if __name__   == '__main__':
     MCMC_run(galaxies_to_run=['zC_406690-MassiveRing'],
              metadata_table_path=fr"C:\Users\{username}\OneDrive - Tel-Aviv University\RotCurvesMCMC\metadata_tables\metadata_table_rings.xlsx",
              obsdata_dir=fr"C:\Users\{username}\OneDrive - Tel-Aviv University\MPE\RC_raw_data",
-             mp=True, num_walkers=20, num_burnins=1, num_steps=2)
+             mp=True, num_walkers=200, num_burnins=50, num_steps=10)
