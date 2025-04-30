@@ -441,7 +441,7 @@ class GaussianRingProfile(SurfaceDensityProfile):
 
     def dlnrho_dlnr(self, r):
         x = self._calculate_normalized_radius(r)
-        return - 1/2 * 2 * self.A * (x - 1)
+        return - 1/2 * 2 * self.A * x * (x - 1)
 
 
 class LightGaussianRingProfile(GaussianRingProfile):

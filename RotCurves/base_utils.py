@@ -35,6 +35,7 @@ def make_pretty_plot(dpi=600):
     """
     mpl.rcParams["figure.dpi"] = dpi
 
+    mpl.rcParams['xtick.labelsize'] = 12
     mpl.rcParams['xtick.top'] = True
     mpl.rcParams['xtick.bottom'] = True
     mpl.rcParams['xtick.minor.visible'] = True
@@ -44,6 +45,7 @@ def make_pretty_plot(dpi=600):
     mpl.rcParams['xtick.minor.bottom'] = True
     mpl.rcParams['xtick.direction'] = 'in'
 
+    mpl.rcParams['ytick.labelsize'] = 12
     mpl.rcParams['ytick.right'] = True
     mpl.rcParams['ytick.left'] = True
     mpl.rcParams['ytick.minor.visible'] = True

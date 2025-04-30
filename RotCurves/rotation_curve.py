@@ -11,7 +11,7 @@ from RotCurves.base_utils import create_r_space
 
 
 class RotationCurveObject:
-    def __init__(self, galaxy=None, edge=None, dx=None, rarray=None, sigma_inst=0., oversample=3., oversample_edge=1., Halo=None, Disk=None, Ring=None, Bulge=None, sigma_dispersion=None,
+    def __init__(self, galaxy=None, edge=None, dx=None, rarray=None, sigma_inst=0., oversample=1., oversample_edge=3., Halo=None, Disk=None, Ring=None, Bulge=None, sigma_dispersion=None,
                  dispersion_function='const', pressure_support="general", inclination=90, sigma_beam=None, FWHM_beam=None, apply_2D=True, include_beam_smearing=True,
                  printtime=False, ndim=1., PA=0., radial_velocity=0):
         if printtime:
@@ -68,7 +68,7 @@ class RotationCurveObject:
             self.oversample_edge = 4
 
         # apply oversample to pixels scale
-        self.dx = self.dx / self.oversample_edge
+        self.dx = self.dx / self.oversample
 
         if rarray is not None:
             self.R_majoraxis = rarray
@@ -243,23 +243,8 @@ class RotationCurveObject:
             for comp in [self.disk, self.ring]:
                 if comp is not None:
                     if comp._is_massive():
-                        self.V2sigma += 2 * self.sigma_profile ** 2 * (absR/comp.r_s) * comp.dlnrho_dlnr(absR)
-            # if self.disk is not None:
-            #     if self.disk._is_massive():
-            #         self.V2sigma += - 2 * self.sigma_profile ** 2 * absR * (self.disk.density_prime_to_density_function(absR))
-            # if self.ring is not None:
-            #     if self.ring._is_massive():
-            #         # self.V2sigma += - 2 * self.sigma_profile ** 2 * absR * (self.ring.density_prime_to_density_function(absR)) # old based on eq. 9 of Burkert(2010). Using 2*sigma0^2*dlnSigma/dlnr
-            #         self.V2sigma += - self.sigma_profile ** 2 * absR * (self.ring.density_prime_to_density_function(absR))   # # new based on eq. 3 of Burkert(2010). Using sigma0^2*dlnrho/dlnr
-
-        # ### using sersic n profile specifically
-        # elif self.pressure_support in ['Sersic_disk', 'sersic_disk']:
-        #     self.V2sigma += 2 * (self.sigma_profile ** 2) * sersic_b() / self.disk.n * (absR / self.disk.re) ** (1 / self.disk.n)
-        #
-        # ### Gaussian ring density profile
-        # elif self.pressure_support in ['Gaussian_ring', 'gaussian_ring']:
-        #     # self.V2sigma += 4 * self.sigma_profile**2 * self.ring.x0 * (absR / self.ring.r0) * ((absR / self.ring.r0) - 1)  # old based on eq. 9 of Burkert(2010). Using 2*sigma0^2*dlnSigma/dlnr
-        #     self.V2sigma += 2 * self.sigma_profile**2 * self.ring.x0 * (absR / self.ring.r0) * ((absR / self.ring.r0) - 1)    # new based on eq. 3 of Burkert(2010). Using sigma0^2*dlnrho/dlnr
+                        # self.V2sigma += 2 * self.sigma_profile ** 2 * (absR/comp.r_s) * comp.dlnrho_dlnr(absR)
+                        self.V2sigma += 2 * self.sigma_profile ** 2 * comp.dlnrho_dlnr(absR)
 
         self.V2sigma = np.nan_to_num(self.V2sigma)
         # Vsigma_interim = np.copy(self.V2sigma)
