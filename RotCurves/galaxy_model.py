@@ -161,7 +161,8 @@ class GalaxyObject:
         self.true_values['f'] = true_f
 
         self.dx = 0.1
-        self.oversample = 1
+        self.oversample_edge = 3.
+        self.oversample = 1.
         self.radial_space = None
         self.edge = None
 

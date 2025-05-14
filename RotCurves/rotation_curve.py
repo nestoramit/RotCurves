@@ -45,6 +45,7 @@ class RotationCurveObject:
             self.dx = galaxy.dx
             self.edge = galaxy.edge
             self.oversample_edge = galaxy.oversample_edge
+            self.oversample = galaxy.oversample
             self.sigma_inst = galaxy.sigma_inst
         elif edge is not None:
             if dx is None:
@@ -68,7 +69,8 @@ class RotationCurveObject:
             self.oversample_edge = 4
 
         # apply oversample to pixels scale
-        self.dx = self.dx / self.oversample
+        if self.dx is not None:
+            self.dx = self.dx / self.oversample
 
         if rarray is not None:
             self.R_majoraxis = rarray

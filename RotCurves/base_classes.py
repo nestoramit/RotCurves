@@ -18,12 +18,13 @@ logger = logging.getLogger('RotCurves')
 
 class SurfaceDensityProfile:
     def __init__(self, mass, r_eff=None, r_s=None, surface_density_function=None,
-                 q0=0., mass_to_light=1.):
+                 q0=0., mass_to_light=1., verbose=False):
         self.mass = mass
         self.r_eff = r_eff
         self.r_s = r_s
         self.q0 = q0
         self.mass_to_light = mass_to_light
+        self.verbose = verbose
 
         # Set the default surface density function to an exponential "Freeman Disk" if not provided (e.g., Freeman+1970)
         if surface_density_function is None:

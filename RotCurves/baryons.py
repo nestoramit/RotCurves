@@ -227,7 +227,7 @@ class FreemanDisk(SurfaceDensityProfile):
 
 class GaussianRingProfile(SurfaceDensityProfile):
     def __init__(self, mass, r_s=None, h=None, FWHM_ring=None, sigma_ring=None, mass_to_light=1.,
-                 lookup=True):
+                 lookup=True, verbose=False):
         """
         Initializes a GaussianRing instance, inheriting from SurfaceDensityProfile and modifying
         the enclosed mass calculation.
@@ -318,10 +318,9 @@ class GaussianRingProfile(SurfaceDensityProfile):
         self.sigma_ring = parameters['sigma_ring']
         self.FWHM_ring = parameters['FWHM_ring']
         self.A = self.r_s ** 2 / (2 * self.sigma_ring ** 2)
-
         # Call the parent class constructor
         super().__init__(mass=mass, r_s=self.r_s, surface_density_function=self.surface_density_function,
-                         q0=0., mass_to_light=mass_to_light)
+                         q0=0., mass_to_light=mass_to_light, verbose=verbose)
 
         # load lookuptables
         # TODO: update path
@@ -355,7 +354,8 @@ class GaussianRingProfile(SurfaceDensityProfile):
             closest_h = self.h
         else:
             closest_h = h_list[np.argmin(np.abs(h_list - self.h))]
-            logger.warning(f'Gaussian Ring h: non-exact value, using {closest_h:2.3f} instead of {self.h:2.3f}')
+            if self.verbose:
+                logger.warning(f'Gaussian Ring h: non-exact value, using {closest_h:2.3f} instead of {self.h:2.3f}')
 
         return GaussianRingLookupTables[closest_h]
 
@@ -365,7 +365,8 @@ class GaussianRingProfile(SurfaceDensityProfile):
             closest_h = self.h
         else:
             closest_h = h_list[np.argmin(np.abs(h_list - self.h))]
-            logger.warning(f'Gaussian Ring h: non-exact value, using {closest_h:2.3f} instead of {self.h:2.3f}')
+            if self.verbose:
+                logger.warning(f'Gaussian Ring h: non-exact value, using {closest_h:2.3f} instead of {self.h:2.3f}')
 
         return GaussianRingBTminLookupTables[closest_h]
 

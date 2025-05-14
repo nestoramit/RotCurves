@@ -108,4 +108,4 @@ if __name__   == '__main__':
     MCMC_run(galaxies_to_run=['zC_406690-MassiveRing'],
              metadata_table_path=fr"C:\Users\{username}\OneDrive - Tel-Aviv University\RotCurvesMCMC\metadata_tables\metadata_table_rings.xlsx",
              obsdata_dir=fr"C:\Users\{username}\OneDrive - Tel-Aviv University\MPE\RC_raw_data",
-             mp=True, num_walkers=200, num_burnins=50, num_steps=10)
+             mp=False, num_walkers=100, num_burnins=1, num_steps=100)
