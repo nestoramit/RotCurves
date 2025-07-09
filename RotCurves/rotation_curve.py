@@ -128,6 +128,8 @@ class RotationCurveObject:
 
                 self.sigma_beam_x = self.sigma_beam
                 self.sigma_beam_y = self.sigma_beam * geometrical_factor_elliptical
+                # TODO: THIS IS AN ERROR, ROUNDING SIGMA_BEAM ALTERS THE SIZE OF THE BEAM
+                # TODO: IT SHOULD BE ROUNDED DOWN AND HANDLE THE LEFTOVERS CAREFULLY
                 self.sigma_beam_pixels_x = int(round(self.sigma_beam_x / self.dx))
                 self.sigma_beam_pixels_y = int(round(self.sigma_beam_y / self.dx))
                 self.oversample_pixels_x = int(round(self.oversample_edge * self.sigma_beam_pixels_x))
@@ -262,7 +264,7 @@ class RotationCurveObject:
         self.Vcirc = np.sqrt(np.maximum(0, self.V2circ)) * np.sign(R_array)
 
         ### correct for pressure support (Vrot)
-        self.V2rot = self.V2h + self.V2baryon + self.V2sigma
+        self.V2rot = self.V2circ + self.V2sigma
         self.Vrot = np.sqrt(np.maximum(0, self.V2rot))
 
         ### final velocities
