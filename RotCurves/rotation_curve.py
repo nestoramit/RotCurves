@@ -11,9 +11,13 @@ from RotCurves.base_utils import create_r_space
 
 
 class RotationCurveObject:
-    def __init__(self, galaxy=None, edge=None, dx=None, rarray=None, sigma_inst=0., oversample=1., oversample_edge=3., Halo=None, Disk=None, Ring=None, Bulge=None, sigma_dispersion=None,
-                 dispersion_function='const', pressure_support="general", inclination=90, sigma_beam=None, FWHM_beam=None, apply_2D=True, include_beam_smearing=True,
-                 printtime=False, ndim=1., PA=0., radial_velocity=0):
+    def __init__(self, galaxy=None, edge=None, dx=None, rarray=None, sigma_inst=0.,
+                 oversample=1., oversample_edge=4.,
+                 Halo=None, Disk=None, Ring=None, Bulge=None, sigma_dispersion=None,
+                 dispersion_function='const', pressure_support="general",
+                 inclination=90, PA=0., sigma_beam=None, FWHM_beam=None,
+                 apply_2D=True, include_beam_smearing=True,
+                 printtime=False, ndim=1., radial_velocity=0):
         if printtime:
             self.starttime = time.time()
 
@@ -130,14 +134,12 @@ class RotationCurveObject:
                 self.sigma_beam_y = self.sigma_beam * geometrical_factor_elliptical
                 # TODO: THIS IS AN ERROR, ROUNDING SIGMA_BEAM ALTERS THE SIZE OF THE BEAM
                 # TODO: IT SHOULD BE ROUNDED DOWN AND HANDLE THE LEFTOVERS CAREFULLY
-                self.sigma_beam_pixels_x = int(round(self.sigma_beam_x / self.dx))
-                self.sigma_beam_pixels_y = int(round(self.sigma_beam_y / self.dx))
-                self.oversample_pixels_x = int(round(self.oversample_edge * self.sigma_beam_pixels_x))
-                self.oversample_pixels_y = int(round(self.oversample_edge * self.sigma_beam_pixels_y))
-                # self.sampling_edge_x = np.round(self.edge + self.oversample_pixels_x * self.dx, 1)
-                # self.sampling_edge_y = np.round(self.edge + self.oversample_pixels_y * self.dx, 1)
-                self.sampling_edge_x = self.edge + self.oversample_pixels_x * self.dx
-                self.sampling_edge_y = self.edge + self.oversample_pixels_y * self.dx
+                self.sigma_beam_pixels_x = int(np.ceil(self.sigma_beam_x / self.dx))
+                self.sigma_beam_pixels_y = int(np.ceil(self.sigma_beam_y / self.dx))
+                self.oversample_edge_pixels_x = int(np.ceil(self.oversample_edge * self.sigma_beam_pixels_x))
+                self.oversample_edge_pixels_y = int(np.ceil(self.oversample_edge * self.sigma_beam_pixels_y))
+                self.sampling_edge_x = self.edge + self.oversample_edge_pixels_x * self.dx
+                self.sampling_edge_y = self.edge + self.oversample_edge_pixels_y * self.dx
                 self.sampling_rarray_x = create_r_space(edge=self.sampling_edge_x, resolution=self.dx)
                 self.sampling_rarray_y = create_r_space(edge=self.sampling_edge_y, resolution=self.dx)
                 self.sampling_edge_2D = np.sqrt(self.sampling_edge_x**2 + self.sampling_edge_y**2)
@@ -321,9 +323,20 @@ class RotationCurveObject:
         # normalize Igrid in case of really low values
         # Igrid /= np.max(Igrid)
 
-        kernel_y = windows.gaussian(2*self.oversample_pixels_y + 1, self.sigma_beam_pixels_y)
-        kernel_x = windows.gaussian(2*self.oversample_pixels_x + 1, self.sigma_beam_pixels_x)
-        gaussian_kernel = np.outer(kernel_y, kernel_x)
+        # kernel_y = windows.gaussian(2 * self.oversample_edge_pixels_y + 1, self.sigma_beam_pixels_y)
+        # kernel_x = windows.gaussian(2 * self.oversample_edge_pixels_x + 1, self.sigma_beam_pixels_x)
+        # gaussian_kernel = np.outer(kernel_y, kernel_x)
+
+        # TODO: correction for rounding sigma_pixels
+        sigma_x = self.sigma_beam_x / self.dx
+        sigma_y = self.sigma_beam_y / self.dx
+        size_x = int(np.ceil(self.oversample_edge * sigma_x))
+        size_y = int(np.ceil(self.oversample_edge * sigma_y))
+        x = np.arange(-size_x, size_x + 1)
+        y = np.arange(-size_y, size_y + 1)
+        xx, yy = np.meshgrid(x, y)
+        gaussian_kernel = np.exp(-(xx ** 2 / (2 * sigma_x ** 2) + yy ** 2 / (2 * sigma_y ** 2)))
+        gaussian_kernel /= np.sum(gaussian_kernel)
 
         if ndim == 1.:
             majoraxis_idx = round((rgrid.shape[0] - 1) / 2)
@@ -332,11 +345,25 @@ class RotationCurveObject:
 
             V_major_axis = []
             smeared_light_major_axis = []
-            for idx in range(self.oversample_pixels_x, N-self.oversample_pixels_x):
-                y_min = majoraxis_idx - self.oversample_pixels_y
-                y_max = majoraxis_idx + self.oversample_pixels_y + 1
-                x_min = idx - self.oversample_pixels_x
-                x_max = idx + self.oversample_pixels_x + 1
+            for idx in range(self.oversample_edge_pixels_x, N - self.oversample_edge_pixels_x):
+                # y_min = majoraxis_idx - self.oversample_edge_pixels_y
+                # y_max = majoraxis_idx + self.oversample_edge_pixels_y + 1
+                # x_min = idx - self.oversample_edge_pixels_x
+                # x_max = idx + self.oversample_edge_pixels_x + 1
+
+                # Kernel shape
+                kernel_h, kernel_w = gaussian_kernel.shape  # e.g., (121, 97)
+
+                # When slicing from the grid, always extract a patch of the same shape
+                # (centered at (cy, cx) with half-widths)
+                half_h = kernel_h // 2
+                half_w = kernel_w // 2
+
+                # For a point at (y, x) in your grid:
+                y_min = majoraxis_idx - half_h
+                y_max = majoraxis_idx + half_h + 1
+                x_min = idx - half_w
+                x_max = idx + half_w + 1
 
                 Vgrid_idx = Vgrid[y_min:y_max, x_min:x_max]
                 Igrid_idx = Igrid[y_min:y_max, x_min:x_max]
@@ -366,21 +393,21 @@ class RotationCurveObject:
         elif ndim == 2.:
             V2d_array = np.zeros(shape=(len(self.R_majoraxis), len(self.R_majoraxis)))
 
-            for idx in range(self.oversample_pixels_y, len(self.sampling_rarray_y) - self.oversample_pixels_y):
+            for idx in range(self.oversample_edge_pixels_y, len(self.sampling_rarray_y) - self.oversample_edge_pixels_y):
                 V2d_array_idx = np.zeros(shape=len(self.R_majoraxis))
 
-                for j in range(self.oversample_pixels_x, len(self.sampling_rarray_x) - self.oversample_pixels_x):
-                    y_min = idx - self.oversample_pixels_y
-                    y_max = idx + self.oversample_pixels_y + 1
-                    x_min = j - self.oversample_pixels_x
-                    x_max = j + self.oversample_pixels_x + 1
+                for j in range(self.oversample_edge_pixels_x, len(self.sampling_rarray_x) - self.oversample_edge_pixels_x):
+                    y_min = idx - self.oversample_edge_pixels_y
+                    y_max = idx + self.oversample_edge_pixels_y + 1
+                    x_min = j - self.oversample_edge_pixels_x
+                    x_max = j + self.oversample_edge_pixels_x + 1
 
                     Vgrid_idx = Vgrid[y_min:y_max, x_min:x_max]
                     Igrid_idx = Igrid[y_min:y_max, x_min:x_max]
                     V2d_array_idx_j = np.divide(np.sum(Vgrid_idx * Igrid_idx * gaussian_kernel), np.sum(Igrid_idx * gaussian_kernel), out=np.zeros(shape=(1)), where=np.sum(Igrid_idx*gaussian_kernel)!=0)
-                    V2d_array_idx[j - self.oversample_pixels_x] = (V2d_array_idx_j)
+                    V2d_array_idx[j - self.oversample_edge_pixels_x] = (V2d_array_idx_j)
 
-                V2d_array[idx - self.oversample_pixels_y] = V2d_array_idx
+                V2d_array[idx - self.oversample_edge_pixels_y] = V2d_array_idx
 
                 Igrid = np.asarray(Igrid)
                 Igrid = np.nan_to_num(Igrid)
