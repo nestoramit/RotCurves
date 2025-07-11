@@ -132,8 +132,6 @@ class RotationCurveObject:
 
                 self.sigma_beam_x = self.sigma_beam
                 self.sigma_beam_y = self.sigma_beam * geometrical_factor_elliptical
-                # TODO: THIS IS AN ERROR, ROUNDING SIGMA_BEAM ALTERS THE SIZE OF THE BEAM
-                # TODO: IT SHOULD BE ROUNDED DOWN AND HANDLE THE LEFTOVERS CAREFULLY
                 self.sigma_beam_pixels_x = int(np.ceil(self.sigma_beam_x / self.dx))
                 self.sigma_beam_pixels_y = int(np.ceil(self.sigma_beam_y / self.dx))
                 self.oversample_edge_pixels_x = int(np.ceil(self.oversample_edge * self.sigma_beam_pixels_x))
