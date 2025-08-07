@@ -302,7 +302,8 @@ def update_prob(prob, xdata, ydata, ydata_err, xinterp, yinterp):
     y_predicted = interpolator(xdata)
     to_keep = np.argwhere(np.logical_not(np.isnan(ydata)))
 
-    prob += -0.5 * np.sum(np.power((ydata[to_keep] - y_predicted[to_keep]) / ydata_err[to_keep], 2))
+    # prob += -0.5 * np.sum(np.power((ydata[to_keep] - y_predicted[to_keep]) / ydata_err[to_keep], 2))
+    prob += -0.5 * np.nansum(np.power((ydata[to_keep] - y_predicted[to_keep]) / ydata_err[to_keep], 2))
     return prob
 
 
