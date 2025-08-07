@@ -27,19 +27,6 @@ class GalaxyObject:
         self.metadata = metadata.loc[self.name]
         self.running_in_cluster = running_in_cluster
 
-        # if obsdata_dir is None:
-        #     if not running_in_cluster:
-        #         self.obsdata_dir = os.path.join(main_path, 'MPE', 'RC_raw_data')
-        #     else:
-        #         self.obsdata_dir = "/mnt/sdceph/users/ycohen/Nestor/inputs/RC_raw_data"
-        # else:
-        self.obsdata_dir = obsdata_dir
-
-        if self.name.find('-') < 0:
-            self.rawdata_path = os.path.join(self.obsdata_dir, self.name + "_flux.obs_prof.txt")
-        else:
-            self.rawdata_path = os.path.join(self.obsdata_dir, self.name[:self.name.find('-')] + "_flux.obs_prof.txt")
-
         self.mass_components_switches = {'halo': self.metadata['mass_components_halo'],
                                         'disk': self.metadata['mass_components_disk'],
                                         'ring': self.metadata['mass_components_ring'],
@@ -59,8 +46,11 @@ class GalaxyObject:
         ## Ring properties
         self.ring_lw = int(self.metadata['ring_lw'])
 
+        ## Pressure Support
+        self.pressure_support = self.metadata["pressure_support_formula"]
+
         ## Halo properties
-        self.z = float(np.round(self.metadata["redshift"], 2))
+        self.z = float(np.round(self.metadata["redshift"], 3))
         self.halo_profile = self.metadata["halo_profile"]
         self.kpc_to_arcsec = 1/Planck18.arcsec_per_kpc_proper(self.z).value
 
@@ -74,7 +64,6 @@ class GalaxyObject:
         self.Mstellar = None
         if 'Mstellar' in self.metadata.keys():
             self.Mstellar = self.metadata["Mstellar"]
-        self.pressure_support = self.metadata["pressure_support_formula"]
         if 'Mvir_Moster' in self.metadata.keys():
             self.Mvir_moster = self.metadata["Mvir_Moster"]
         elif self.Mstellar is not None:
@@ -109,8 +98,8 @@ class GalaxyObject:
                                         "M_vir": self.metadata["Mvir_switch"],
                                         "BT": self.metadata["BT_switch"],
                                         "DT": self.metadata["DT_switch"],
-                                        "R_peak": self.metadata["Rpeak_switch"],
-                                        "ring_FWHM": self.metadata["FWHMring_switch"],
+                                        "R_peak": self.metadata["R_peak_switch"],
+                                        "ring_FWHM": self.metadata["FWHM_ring_switch"],
                                         "sigma": self.metadata["sigma_switch"],
                                         "c": self.metadata["c_switch"],
                                         "alpha": self.metadata["alpha_switch"],
@@ -166,40 +155,60 @@ class GalaxyObject:
         self.radial_space = None
         self.edge = None
 
-        if obsdata is None:
-            if os.path.exists(self.rawdata_path):
-                self.rawdata = pd.read_csv(os.path.join(self.rawdata_path), sep=r'\t', header=None, engine='python',
-                                           names=['r ["]', "V", "V_err", "disp", "disp_err", "flux", "flux_err"])
-                self.rawdata_r = np.array(self.rawdata['r ["]']) * self.kpc_to_arcsec
-                self.rawdata_V = np.array(self.rawdata['V'])
-                self.rawdata_V_err = np.array(self.rawdata['V_err'])
-                self.rawdata_disp = np.array(self.rawdata['disp'])
-                self.rawdata_disp_err = np.array(self.rawdata['disp_err'])
-                self.rawdata_flux = np.array(self.rawdata['flux'])
-                self.rawdata_flux_err = np.array(self.rawdata['flux_err'])
-                self.define_radial_space(edge=np.max(np.abs(self.rawdata_r)), resolution=self.dx, oversample=self.oversample)
-        else:
-            self.rawdata_r = np.array(obsdata['r']) * self.kpc_to_arcsec
-            self.rawdata_V = np.array(obsdata['V'])
-            self.rawdata_V_err = np.array(obsdata['V_err'])
-            self.rawdata_disp = np.array(obsdata['disp'])
-            self.rawdata_disp_err = np.array(obsdata['disp_err'])
-            self.rawdata_flux = np.array(self.rawdata['flux'])
-            self.rawdata_flux_err = np.array(self.rawdata['flux_err'])
-            self.define_radial_space(edge=np.max(np.abs(self.rawdata_r)), resolution=self.dx, oversample=self.oversample)
+        self.obsdata = obsdata
+        self.obsdata_dir = obsdata_dir
+
+        if self.obsdata is None:
+            if self.name.find('-') < 0:
+                self.obsdata_path = os.path.join(self.obsdata_dir, self.name + "_flux.obs_prof.txt")
+            else:
+                self.obsdata_path = os.path.join(self.obsdata_dir,
+                                                 self.name[:self.name.find('-')] + "_flux.obs_prof.txt")
+            self.obsdata = pd.read_csv(os.path.join(self.obsdata_path), sep=r'\t', header=None, engine='python',
+                                       names=['r ["]', "V", "V_err", "disp", "disp_err", "flux", "flux_err"])
+
+        self.obsdata_r = np.asarray(self.obsdata['r']) * self.kpc_to_arcsec  # Convert arcsec to kpc
+        self.obsdata_V = np.asarray(self.obsdata['V'])
+        self.obsdata_V_err = np.asarray(self.obsdata['V_err'])
+        self.obsdata_disp = np.asarray(self.obsdata['disp'])
+        self.obsdata_disp_err = np.asarray(self.obsdata['disp_err'])
+        self.obsdata_flux = np.asarray(self.obsdata['flux'])
+        self.obsdata_flux_err = np.asarray(self.obsdata['flux_err'])
+        self.define_radial_space(edge=np.max(np.abs(self.obsdata_r)), resolution=self.dx, oversample=self.oversample)
+
+        # if self.rawdata is None:
+        #     if os.path.exists(self.obsdata_path):
+        #
+        #         self.obsdata_r = np.array(self.rawdata['r ["]']) * self.kpc_to_arcsec
+        #         self.obsdata_V = np.array(self.rawdata['V'])
+        #         self.obsdata_V_err = np.array(self.rawdata['V_err'])
+        #         self.obsdata_disp = np.array(self.rawdata['disp'])
+        #         self.obsdata_disp_err = np.array(self.rawdata['disp_err'])
+        #         self.obsdata_flux = np.array(self.rawdata['flux'])
+        #         self.obsdata_flux_err = np.array(self.rawdata['flux_err'])
+        #         self.define_radial_space(edge=np.max(np.abs(self.obsdata_r)), resolution=self.dx, oversample=self.oversample)
+        # else:
+        #     self.obsdata_r = np.array(obsdata['r']) * self.kpc_to_arcsec
+        #     self.obsdata_V = np.array(obsdata['V'])
+        #     self.obsdata_V_err = np.array(obsdata['V_err'])
+        #     self.obsdata_disp = np.array(obsdata['disp'])
+        #     self.obsdata_disp_err = np.array(obsdata['disp_err'])
+        #     self.obsdata_flux = np.array(self.rawdata['flux'])
+        #     self.obsdata_flux_err = np.array(self.rawdata['flux_err'])
+        #     self.define_radial_space(edge=np.max(np.abs(self.obsdata_r)), resolution=self.dx, oversample=self.oversample)
 
         # Normalize flux
-        normalization = np.max(self.rawdata_flux)
-        self.rawdata_flux /= normalization
-        self.rawdata_flux_err /= normalization
+        normalization = np.max(self.obsdata_flux)
+        self.obsdata_flux /= normalization
+        self.obsdata_flux_err /= normalization
 
         self.fit_goals = {
-            'flux': self.metadata['fit_flux'],
+                'flux': self.metadata['fit_flux'],
             'velocity': self.metadata['fit_velocity'],
             'dispersion': self.metadata['fit_dispersion']
         }
 
-        self.dof = len(self.rawdata_r) - sum(self.switches['parameters'].values())
+        self.dof = len(self.obsdata_r) - sum(self.switches['parameters'].values())
 
         self.output_dir = "/".join([galaxy_outputs_folder, '%s-free[%s]-%04d-%02d-%02d' %
                                     (self.name,

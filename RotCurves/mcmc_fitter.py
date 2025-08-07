@@ -276,22 +276,22 @@ def lnlike(theta, galaxy, mcmc_hparameters):
 
     prob = 0
     # update lnprob from flux fit
-    x = galaxy.rawdata_r
+    x = galaxy.obsdata_r
     if galaxy.fit_goals['flux']:
         prob = update_prob(prob=prob,
-                           xdata=x, ydata=galaxy.rawdata_flux, ydata_err=galaxy.rawdata_flux_err,
+                           xdata=x, ydata=galaxy.obsdata_flux, ydata_err=galaxy.obsdata_flux_err,
                            xinterp=galaxy.radial_space["array"], yinterp=RC.smeared_light_profile)
 
     # update lnprob from velocity fit
     if galaxy.fit_goals['velocity']:
         prob = update_prob(prob=prob,
-                           xdata=x, ydata=galaxy.rawdata_V, ydata_err=galaxy.rawdata_V_err,
+                           xdata=x, ydata=galaxy.obsdata_V, ydata_err=galaxy.obsdata_V_err,
                            xinterp=galaxy.radial_space["array"], yinterp=RC.smeared_with_inclination)
 
     # update lnprob from dispersion fit
     if galaxy.fit_goals['dispersion']:
         prob = update_prob(prob=prob,
-                           xdata=x, ydata=galaxy.rawdata_disp, ydata_err=galaxy.rawdata_disp_err,
+                           xdata=x, ydata=galaxy.obsdata_disp, ydata_err=galaxy.obsdata_disp_err,
                            xinterp=galaxy.radial_space["array"], yinterp=RC.velocity_dispersion)
 
     return prob
@@ -548,16 +548,16 @@ def save_fit_profiles(galaxy, RC):
 
     Rarray = galaxy.radial_space['array']
 
-    out_df_data['r [kpc]'] = galaxy.rawdata_r
-    out_df_data['r [arcsec]'] = galaxy.rawdata_r / galaxy.kpc_to_arcsec
+    out_df_data['r [kpc]'] = galaxy.obsdata_r
+    out_df_data['r [arcsec]'] = galaxy.obsdata_r / galaxy.kpc_to_arcsec
     interpolator = CubicSpline(x=Rarray, y=RC.smeared_with_inclination)
-    out_df_data['v_data'] = galaxy.rawdata_V
-    out_df_data['v_data_err'] = galaxy.rawdata_V_err
-    out_df_data['v_model'] = interpolator(galaxy.rawdata_r)
+    out_df_data['v_data'] = galaxy.obsdata_V
+    out_df_data['v_data_err'] = galaxy.obsdata_V_err
+    out_df_data['v_model'] = interpolator(galaxy.obsdata_r)
     interpolator = CubicSpline(x=Rarray, y=RC.velocity_dispersion)
-    out_df_data['disp_data'] = galaxy.rawdata_disp
-    out_df_data['disp_data_err'] = galaxy.rawdata_disp_err
-    out_df_data['disp_model'] = interpolator(galaxy.rawdata_r)
+    out_df_data['disp_data'] = galaxy.obsdata_disp
+    out_df_data['disp_data_err'] = galaxy.obsdata_disp_err
+    out_df_data['disp_model'] = interpolator(galaxy.obsdata_r)
 
     out_df_intrinsic['r [kpc]'] = Rarray
     out_df_intrinsic['v_circ'] = RC.intrinsic_no_dispersion
@@ -591,25 +591,25 @@ def save_fit_profiles(galaxy, RC):
 
 def red_chisq(galaxy, RC):
     R_array = galaxy.radial_space["array"]
-    x_data = galaxy.rawdata_r
+    x_data = galaxy.obsdata_r
 
     chisq_flux = 0
     if galaxy.fit_goals['flux']:
         interpolator_flux = CubicSpline(x=R_array, y=RC.smeared_light_profile)
         flux_matched = interpolator_flux(x_data)
-        chisq_flux = np.sum(np.power((flux_matched - galaxy.rawdata_flux) / galaxy.rawdata_flux_err, 2))
+        chisq_flux = np.sum(np.power((flux_matched - galaxy.obsdata_flux) / galaxy.obsdata_flux_err, 2))
 
     chisq_vel = 0
     if galaxy.fit_goals['velocity']:
         interpolator_vel = CubicSpline(x=R_array, y=RC.smeared_with_inclination)
         vel_matched = interpolator_vel(x_data)
-        chisq_vel = np.sum(np.power((vel_matched - galaxy.rawdata_V) / galaxy.rawdata_V_err, 2))
+        chisq_vel = np.sum(np.power((vel_matched - galaxy.obsdata_V) / galaxy.obsdata_V_err, 2))
 
     chisq_disp = 0
     if galaxy.fit_goals['dispersion']:
         interpolator_disp = CubicSpline(x=R_array, y=RC.velocity_dispersion)
         disp_matched = interpolator_disp(x_data)
-        chisq_disp = np.sum(np.power((disp_matched - galaxy.rawdata_disp) / galaxy.rawdata_disp_err, 2))
+        chisq_disp = np.sum(np.power((disp_matched - galaxy.obsdata_disp) / galaxy.obsdata_disp_err, 2))
 
     chisq_total = np.sum([chisq_flux, chisq_vel, chisq_disp])
 
@@ -1008,16 +1008,16 @@ def plot_bestfit(galaxy, RC, output_plot=True):
                         ax.set_tick_params(labelleft=False, labelright=False)
 
             if fit_goal == 'flux':
-                plot_single_bestfit(rawdata_x=galaxy.rawdata_r, rawdata_y=galaxy.rawdata_flux,
-                                    rawdata_yerr=galaxy.rawdata_flux_err,
+                plot_single_bestfit(rawdata_x=galaxy.obsdata_r, rawdata_y=galaxy.obsdata_flux,
+                                    rawdata_yerr=galaxy.obsdata_flux_err,
                                     model_x=R_array, model_y=RC.smeared_light_profile,
                                     ax_values=axes[i], ax_res=axes[i+ncols])
                 axes[i].set_ylabel(r'$flux$ [arb.]')
                 axes[i+ncols].set_ylabel(r'$flux$ res. [arb.]')
 
             elif fit_goal == 'velocity':
-                plot_single_bestfit(rawdata_x=galaxy.rawdata_r, rawdata_y=galaxy.rawdata_V,
-                                    rawdata_yerr=galaxy.rawdata_V_err,
+                plot_single_bestfit(rawdata_x=galaxy.obsdata_r, rawdata_y=galaxy.obsdata_V,
+                                    rawdata_yerr=galaxy.obsdata_V_err,
                                     model_x=R_array, model_y=RC.smeared_with_inclination,
                                     ax_values=axes[i], ax_res=axes[i + ncols])
                 axes[i].set_ylabel(r'$V_{rot}$ [km/s]')
@@ -1026,8 +1026,8 @@ def plot_bestfit(galaxy, RC, output_plot=True):
                 yedge = np.max(np.abs(axes[i].get_ylim()))
                 axes[i].set_ylim([-yedge, yedge])
             elif fit_goal == 'dispersion':
-                plot_single_bestfit(rawdata_x=galaxy.rawdata_r, rawdata_y=galaxy.rawdata_disp,
-                                    rawdata_yerr=galaxy.rawdata_disp_err,
+                plot_single_bestfit(rawdata_x=galaxy.obsdata_r, rawdata_y=galaxy.obsdata_disp,
+                                    rawdata_yerr=galaxy.obsdata_disp_err,
                                     model_x=R_array, model_y=RC.velocity_dispersion,
                                     ax_values=axes[i], ax_res=axes[i + ncols])
                 axes[i].set_ylabel(r'$\sigma_0\ [km/s]$')
@@ -1123,13 +1123,13 @@ def plot_mcmcFluxes(mcmc_fluxes, galaxy, show_plot=False, output_plot=True):
     fig, ax = plt.subplots()
     for mcmc_flux in mcmc_fluxes:
         ax.plot(R, mcmc_flux, color="g", alpha=0.1)
-    ax.errorbar(galaxy.rawdata_r, galaxy.rawdata_flux, galaxy.rawdata_flux_err, color='k', fmt=".", label="data")
+    ax.errorbar(galaxy.obsdata_r, galaxy.obsdata_flux, galaxy.obsdata_flux_err, color='k', fmt=".", label="data")
 
     # ax.set_title("%s - Rotation Curves\n"
     #              "Free parameters: %s" % (galaxy.name, [x for x in switches["parameters"] if switches["parameters"][x] == 1]))
     buffer = 0.2
-    ax.set_ylim(np.minimum(np.min(galaxy.rawdata_flux), np.min(mcmc_fluxes)) * (1 + buffer), np.maximum(np.max(galaxy.rawdata_flux), np.max(mcmc_fluxes)) * (1 + buffer))
-    ax.set_xlim(np.min(galaxy.rawdata_r) * (1 + buffer), np.max(galaxy.rawdata_r) * (1 + buffer))
+    ax.set_ylim(np.minimum(np.min(galaxy.obsdata_flux), np.min(mcmc_fluxes)) * (1 + buffer), np.maximum(np.max(galaxy.obsdata_flux), np.max(mcmc_fluxes)) * (1 + buffer))
+    ax.set_xlim(np.min(galaxy.obsdata_r) * (1 + buffer), np.max(galaxy.obsdata_r) * (1 + buffer))
     ax.xaxis.set_major_locator(MultipleLocator(5))
     ax.xaxis.set_minor_locator(MultipleLocator(1))
     ax.yaxis.set_major_locator(MultipleLocator(1.))
@@ -1162,13 +1162,13 @@ def plot_mcmcCurves(mcmc_rotation_curves, galaxy, show_plot=False, output_plot=T
     fig, ax = plt.subplots()
     for mcmc_curve in mcmc_rotation_curves:
         ax.plot(R, mcmc_curve, color="g", alpha=0.1)
-    ax.errorbar(galaxy.rawdata_r, galaxy.rawdata_V, galaxy.rawdata_V_err, color='k', fmt=".", label="data")
+    ax.errorbar(galaxy.obsdata_r, galaxy.obsdata_V, galaxy.obsdata_V_err, color='k', fmt=".", label="data")
 
     # ax.set_title("%s - Rotation Curves\n"
     #              "Free parameters: %s" % (galaxy.name, [x for x in switches["parameters"] if switches["parameters"][x] == 1]))
     buffer = 0.2
-    ax.set_ylim(np.minimum(np.min(galaxy.rawdata_V), np.min(mcmc_rotation_curves)) * (1 + buffer), np.maximum(np.max(galaxy.rawdata_V), np.max(mcmc_rotation_curves)) * (1 + buffer))
-    ax.set_xlim(np.min(galaxy.rawdata_r) * (1 + buffer), np.max(galaxy.rawdata_r) * (1 + buffer))
+    ax.set_ylim(np.minimum(np.min(galaxy.obsdata_V), np.min(mcmc_rotation_curves)) * (1 + buffer), np.maximum(np.max(galaxy.obsdata_V), np.max(mcmc_rotation_curves)) * (1 + buffer))
+    ax.set_xlim(np.min(galaxy.obsdata_r) * (1 + buffer), np.max(galaxy.obsdata_r) * (1 + buffer))
     ax.xaxis.set_major_locator(MultipleLocator(5))
     ax.xaxis.set_minor_locator(MultipleLocator(1))
     ax.yaxis.set_major_locator(MultipleLocator(50))
@@ -1204,13 +1204,13 @@ def plot_mcmcDispersion(mcmc_dispersion, galaxy, show_plot=False, output_plot=Tr
     fig, ax = plt.subplots()
     for dispersion in mcmc_dispersion:
         ax.plot(galaxy.radial_space["array"], dispersion, color="g", alpha=0.1)
-    ax.errorbar(galaxy.rawdata_r, galaxy.rawdata_disp, galaxy.rawdata_disp_err, color='k', fmt=".", label="data")
+    ax.errorbar(galaxy.obsdata_r, galaxy.obsdata_disp, galaxy.obsdata_disp_err, color='k', fmt=".", label="data")
 
     # ax.set_title("%s - Velocity Dispersion\n"
     #              "Free parameters: %s" % (galaxy.name, [x for x in switches["parameters"] if switches["parameters"][x] == 1]))
     buffer = 0.2
-    ax.set_ylim(0, np.maximum(np.nanmax(mcmc_dispersion), np.nanmax(galaxy.rawdata_disp)) * (1 + buffer))
-    ax.set_xlim(np.nanmin(galaxy.rawdata_r) * (1 + buffer), np.nanmax(galaxy.rawdata_r) * (1 + buffer))
+    ax.set_ylim(0, np.maximum(np.nanmax(mcmc_dispersion), np.nanmax(galaxy.obsdata_disp)) * (1 + buffer))
+    ax.set_xlim(np.nanmin(galaxy.obsdata_r) * (1 + buffer), np.nanmax(galaxy.obsdata_r) * (1 + buffer))
     ax.xaxis.set_major_locator(MultipleLocator(5))
     ax.xaxis.set_minor_locator(MultipleLocator(1))
     ax.yaxis.set_major_locator(MultipleLocator(50))

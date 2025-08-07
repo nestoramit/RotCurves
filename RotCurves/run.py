@@ -4,8 +4,8 @@ import pandas as pd
 import time
 import numpy as np
 
-from galaxy_model import GalaxyObject
-from base_utils import make_pretty_plot
+from RotCurves.galaxy_model import GalaxyObject
+from RotCurves.base_utils import make_pretty_plot
 
 sys.path.insert(0, r"/mnt/sdceph/users/ycohen/Nestor/scripts")
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))

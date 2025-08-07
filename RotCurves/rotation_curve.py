@@ -212,7 +212,7 @@ class RotationCurveObject:
 
         if self.disk is not None:
             self.V2d = self.disk.vcirc2(R_array)
-            self.Vd = self.disk.vcirc2(R_array)
+            self.Vd = self.disk.vcirc(R_array)
         if self.ring is not None:
             self.V2r = self.ring.vcirc2(R_array)
             self.Vr = self.ring.vcirc(R_array)
@@ -248,7 +248,7 @@ class RotationCurveObject:
                 if comp is not None:
                     if comp._is_massive():
                         # self.V2sigma += 2 * self.sigma_profile ** 2 * (absR/comp.r_s) * comp.dlnrho_dlnr(absR)
-                        self.V2sigma += 2 * self.sigma_profile ** 2 * comp.dlnrho_dlnr(absR)
+                        self.V2sigma = self.V2sigma + 2 * self.sigma_profile ** 2 * comp.dlnrho_dlnr(absR)
 
         self.V2sigma = np.nan_to_num(self.V2sigma)
         # Vsigma_interim = np.copy(self.V2sigma)
