@@ -905,8 +905,8 @@ def plot_mcmcCornerplot(samples_with_f, results_table, galaxy, show_plot=False, 
     # if galaxy.switches['fractions']:
     #     truth.append(galaxy.true_values['f'])
 
-    bestfit_params_medians = dict(results_table['median'])
-    bestfit_params_map = dict(results_table['MAP'])
+    # bestfit_params_medians = dict(results_table['median'])
+    # bestfit_params_map = dict(results_table['MAP'])
 
     bestfit_medians = [results_table['median'].loc[x] for x in on_switches]
     bestfit_maps = [results_table['MAP'].loc[x] for x in on_switches]
@@ -915,9 +915,6 @@ def plot_mcmcCornerplot(samples_with_f, results_table, galaxy, show_plot=False, 
     if galaxy.switches['fractions']:
         bestfit_medians.append(results_table['median'].loc['f'])
         bestfit_maps.append(results_table['MAP'].loc['f'])
-
-    print(bestfit_medians)
-    print(bestfit_maps)
 
     fig = corner.corner(np.array(samples_with_f), labels=labels, label_kwargs={'fontsize': 16},
                         bins=20, quantiles=(0.16, 0.5, 0.84),
@@ -959,26 +956,54 @@ def plot_mcmcCornerplot(samples_with_f, results_table, galaxy, show_plot=False, 
     logger.info('Corner plot runtime: %s minutes' % np.round(runtime * 1e-9 / 60, 1))
 
 
-def plot_single_bestfit(rawdata_x, rawdata_y, rawdata_yerr, model_x, model_y, ax_values, ax_res):
+def plot_single_bestfit(rawdata_x, rawdata_y, rawdata_yerr, model_x, model_y, ax_values, ax_res, kpc_to_arcsec=None):
     color_data = 'black'
     color_model = colors['red']
 
+    # plot data and model
     ax_values.errorbar(x=rawdata_x, y=rawdata_y, yerr=rawdata_yerr,
                        ms=5, color=color_data, fmt='s', capsize=2., capthick=1., label='data')
-    ax_values.plot(model_x, model_y, color=color_model, lw=1.5)
 
+    # interpolate model to data points
     interpolator = CubicSpline(x=model_x, y=model_y)
     y_bestfit = interpolator(rawdata_x)
+
+    # plot model
     ax_values.scatter(rawdata_x, y_bestfit,
                       color=color_model, marker='s', s=40, label='model')
+    ax_values.plot(model_x, model_y, color=color_model, lw=1.5)
 
-    ax_res.errorbar(x=rawdata_x, y=rawdata_y - y_bestfit, yerr=rawdata_yerr,
-                    ms=5, color=color_data, fmt='s', capsize=2., capthick=1.)
-    ax_res.axhline(y=0, color=color_model, ls='-', lw=2.)
+    # plot residuals
+    ax_res.scatter(x=rawdata_x, y=y_bestfit - rawdata_y,
+                   s=40, color=color_model, marker='s')
+    ax_res.errorbar(x=rawdata_x, y=np.zeros_like(rawdata_x), yerr=rawdata_yerr,
+                    ms=0.1, color=color_data, fmt='s', capsize=2., capthick=2.)
+    ax_res.axhline(y=0, color=color_data, ls='-', lw=1.)
 
+    # set axes limits
     ax_values.set_xlim([np.min(rawdata_x)*1.2, np.max(rawdata_x)*1.2])
     ax_res.set_xlim([np.min(rawdata_x)*1.2, np.max(rawdata_x)*1.2])
 
+    # set axes labels
+    ax_res.set_xlabel(r'$R$ [kpc]', fontsize=16)
+    if ax_res.get_xlim()[1] > 6:
+        ax_res.xaxis.set_major_locator(MultipleLocator(5))
+        ax_res.xaxis.set_minor_locator(MultipleLocator(1))
+    else:
+        ax_res.xaxis.set_major_locator(MultipleLocator(2))
+        ax_res.xaxis.set_minor_locator(MultipleLocator(0.5))
+
+    if kpc_to_arcsec is not None:
+        ax_values_twin = ax_values.twiny()
+        ax_values_twin.plot(rawdata_x/kpc_to_arcsec, np.zeros_like(rawdata_x), lw=0.01, ls=':', color=colors['grey'])
+        ax_values_twin.set_xlabel(r'$R$ ["]', fontsize=14)
+        ax_values_twin.tick_params(axis='x', labelsize=12)
+        if ax_values_twin.get_xlim()[1] > 0.6:
+            ax_values_twin.xaxis.set_major_locator(MultipleLocator(0.5))
+            ax_values_twin.xaxis.set_minor_locator(MultipleLocator(0.1))
+        else:
+            ax_values_twin.xaxis.set_major_locator(MultipleLocator(0.2))
+            ax_values_twin.xaxis.set_minor_locator(MultipleLocator(0.05))
 
 def plot_bestfit(galaxy, RC, output_plot=True):
     starttime = time.time_ns()
@@ -1012,27 +1037,31 @@ def plot_bestfit(galaxy, RC, output_plot=True):
                 plot_single_bestfit(rawdata_x=galaxy.obsdata_r, rawdata_y=galaxy.obsdata_flux,
                                     rawdata_yerr=galaxy.obsdata_flux_err,
                                     model_x=R_array, model_y=RC.smeared_light_profile,
-                                    ax_values=axes[i], ax_res=axes[i+ncols])
-                axes[i].set_ylabel(r'$flux$ [arb.]')
-                axes[i+ncols].set_ylabel(r'$flux$ res. [arb.]')
+                                    ax_values=axes[i], ax_res=axes[i+ncols],
+                                    kpc_to_arcsec=galaxy.kpc_to_arcsec)
+                axes[i].set_ylabel(r'$flux$ [arb.]', fontsize=16)
+                axes[i+ncols].set_ylabel(r'$flux$ res. [arb.]', fontsize=16)
 
             elif fit_goal == 'velocity':
                 plot_single_bestfit(rawdata_x=galaxy.obsdata_r, rawdata_y=galaxy.obsdata_V,
                                     rawdata_yerr=galaxy.obsdata_V_err,
                                     model_x=R_array, model_y=RC.smeared_with_inclination,
-                                    ax_values=axes[i], ax_res=axes[i + ncols])
-                axes[i].set_ylabel(r'$V_{rot}$ [km/s]')
-                axes[i + ncols].set_ylabel(r'$V_{rot}$ res. [km/s]')
+                                    ax_values=axes[i], ax_res=axes[i + ncols],
+                                    kpc_to_arcsec=galaxy.kpc_to_arcsec)
+                axes[i].set_ylabel(r'$V_{rot}$ [km/s]', fontsize=16)
+                axes[i + ncols].set_ylabel(r'$V_{rot}$ res. [km/s]', fontsize=16)
 
                 yedge = np.max(np.abs(axes[i].get_ylim()))
                 axes[i].set_ylim([-yedge, yedge])
+
             elif fit_goal == 'dispersion':
                 plot_single_bestfit(rawdata_x=galaxy.obsdata_r, rawdata_y=galaxy.obsdata_disp,
                                     rawdata_yerr=galaxy.obsdata_disp_err,
                                     model_x=R_array, model_y=RC.velocity_dispersion,
-                                    ax_values=axes[i], ax_res=axes[i + ncols])
-                axes[i].set_ylabel(r'$\sigma_0\ [km/s]$')
-                axes[i + ncols].set_ylabel(r'$\sigma_0$ res. [km/s]')
+                                    ax_values=axes[i], ax_res=axes[i + ncols],
+                                    kpc_to_arcsec=galaxy.kpc_to_arcsec)
+                axes[i].set_ylabel(r'$\sigma\ [km/s]$', fontsize=16)
+                axes[i + ncols].set_ylabel(r'$\sigma$ res. [km/s]', fontsize=16)
 
             # add legend
             if i == 0:
