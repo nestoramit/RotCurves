@@ -598,21 +598,21 @@ def red_chisq(galaxy, RC):
     if galaxy.fit_goals['flux']:
         interpolator_flux = CubicSpline(x=R_array, y=RC.smeared_light_profile)
         flux_matched = interpolator_flux(x_data)
-        chisq_flux = np.sum(np.power((flux_matched - galaxy.obsdata_flux) / galaxy.obsdata_flux_err, 2))
+        chisq_flux = np.nansum(np.power((flux_matched - galaxy.obsdata_flux) / galaxy.obsdata_flux_err, 2))
 
     chisq_vel = 0
     if galaxy.fit_goals['velocity']:
         interpolator_vel = CubicSpline(x=R_array, y=RC.smeared_with_inclination)
         vel_matched = interpolator_vel(x_data)
-        chisq_vel = np.sum(np.power((vel_matched - galaxy.obsdata_V) / galaxy.obsdata_V_err, 2))
+        chisq_vel = np.nansum(np.power((vel_matched - galaxy.obsdata_V) / galaxy.obsdata_V_err, 2))
 
     chisq_disp = 0
     if galaxy.fit_goals['dispersion']:
         interpolator_disp = CubicSpline(x=R_array, y=RC.velocity_dispersion)
         disp_matched = interpolator_disp(x_data)
-        chisq_disp = np.sum(np.power((disp_matched - galaxy.obsdata_disp) / galaxy.obsdata_disp_err, 2))
+        chisq_disp = np.nansum(np.power((disp_matched - galaxy.obsdata_disp) / galaxy.obsdata_disp_err, 2))
 
-    chisq_total = np.sum([chisq_flux, chisq_vel, chisq_disp])
+    chisq_total = np.nansum([chisq_flux, chisq_vel, chisq_disp])
 
     # reduce by dof
     chisq_flux /= galaxy.dof
@@ -680,10 +680,10 @@ Prior information:\n%s''' % sep
         if not param == 'f':
             prior = galaxy.priors[param]
             if galaxy.switches['parameters'][param]:
-                if prior.type == 'g':
+                if prior.type == 'gaussian':
                     s = '\n    %s:%s Gaussian (mu=%2.2f, sig=%2.2f)' % (param, ' '*(num_spaces - len(param)), prior.initial, prior.sig)
-                elif prior.type == 'f':
-                    s = '\n    %s:%s flat (%2.2f, %2.2f)' % (param, ' '*(num_spaces - len(param)), prior.min, prior.max)
+                elif prior.type == 'uniform':
+                    s = '\n    %s:%s Uniform (%2.2f, %2.2f)' % (param, ' '*(num_spaces - len(param)), prior.min, prior.max)
             else:
                 s = '\n    %s:%s FIXED (%2.2f)' % (param, ' '*(num_spaces - len(param)), prior.initial)
             f.write(s)
@@ -916,30 +916,31 @@ def plot_mcmcCornerplot(samples_with_f, results_table, galaxy, show_plot=False, 
         bestfit_medians.append(results_table['median'].loc['f'])
         bestfit_maps.append(results_table['MAP'].loc['f'])
 
+    true_values = [galaxy.true_values[x] for x in on_switches+["f"]]
     fig = corner.corner(np.array(samples_with_f), labels=labels, label_kwargs={'fontsize': 16},
-                        bins=20, quantiles=(0.16, 0.5, 0.84),
-                        smooth=5,
+                        bins=15, quantiles=(0.16, 0.5, 0.84),
+                        smooth=3,
                         show_titles=True, title_kwargs={'fontsize': 14},
-                        truths=bestfit_medians, truth_color=colors['red'], plot_contours=True)
-    del samples_with_f
+                        truths=true_values, truth_color=colors['pink'], plot_contours=True)
 
     for ax in fig.axes:
         for i, param in enumerate(on_switches):
             label = labels[i]
             if label in str(ax.title):
                 # plot prior prob
-                if galaxy.priors[param].type == 'g':
+                if galaxy.priors[param].type == 'gaussian':
                     x = np.linspace(ax.get_xlim()[0], ax.get_xlim()[1], num=100)
-                    y = np.exp(galaxy.priors[param].lnprob(x))
-                    # y = gaussian(x=x, mu=galaxy.priors[param].initial, sig=galaxy.priors[param].sig)
-                    ax.plot(x, y * ax.get_ylim()[1] * 0.9, color=colors['pink'], lw=1.5, ls=':')
-                elif galaxy.priors[param].type == 'f':
-                    x = np.linspace(ax.get_xlim()[0], ax.get_xlim()[1], num=100)
-                    y = np.ones_like(x)
-                    ax.plot(x, y * ax.get_ylim()[1] * 0.9, color=colors['pink'], lw=1.5, ls=':')
+                    y = np.exp(galaxy.priors[param].lnprob(x)) * (ax.get_ylim()[1] - ax.get_ylim()[0]) * 0.9
+                    ax.plot(x, y, color=colors['pink'], lw=1.5, ls=':')
+                elif galaxy.priors[param].type == 'uniform':
+                    y = (ax.get_ylim()[1] - ax.get_ylim()[0]) * 0.2
+                    ax.axhline(y, color=colors['pink'], lw=1.5, ls=':')
+
+                # plot medians
+                ax.axvline(bestfit_medians[i], color=colors['red'], ls='-', lw=2.5)
 
                 # plot MAP
-                ax.axvline(bestfit_maps[i], color=colors['green'], ls='-', lw=1.5)
+                ax.axvline(bestfit_maps[i], color=colors['green'], ls='-', lw=2.5)
 
     if output_plot:
         filename = "%s-RotCurves_cornerPlot.jpg" % galaxy.name
@@ -955,6 +956,7 @@ def plot_mcmcCornerplot(samples_with_f, results_table, galaxy, show_plot=False, 
     runtime = time.time_ns() - starttime
     logger.info('Corner plot runtime: %s minutes' % np.round(runtime * 1e-9 / 60, 1))
 
+    del samples_with_f
 
 def plot_single_bestfit(rawdata_x, rawdata_y, rawdata_yerr, model_x, model_y, ax_values, ax_res, kpc_to_arcsec=None):
     color_data = 'black'
@@ -1004,6 +1006,7 @@ def plot_single_bestfit(rawdata_x, rawdata_y, rawdata_yerr, model_x, model_y, ax
         else:
             ax_values_twin.xaxis.set_major_locator(MultipleLocator(0.2))
             ax_values_twin.xaxis.set_minor_locator(MultipleLocator(0.05))
+
 
 def plot_bestfit(galaxy, RC, output_plot=True):
     starttime = time.time_ns()

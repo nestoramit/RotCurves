@@ -367,13 +367,13 @@ class RotationCurveObject:
                 Igrid_idx = Igrid[y_min:y_max, x_min:x_max]
 
                 weights = Igrid_idx * gaussian_kernel
-                numerator = np.sum(Vgrid_idx * weights)
-                denominator = np.sum(weights)
+                numerator = np.nansum(Vgrid_idx * weights)
+                denominator = np.nansum(weights)
                 V_major_axis_idx = np.divide(numerator, denominator, out=np.zeros_like(denominator), where=denominator!=0)
                 V_major_axis.append(V_major_axis_idx)
 
-                numerator = np.sum(Igrid_idx * gaussian_kernel)
-                denominator = np.sum(gaussian_kernel)
+                numerator = np.nansum(Igrid_idx * gaussian_kernel)
+                denominator = np.nansum(gaussian_kernel)
                 smeared_light_major_axis_idx = np.divide(numerator, denominator, out=np.zeros_like(denominator), where=denominator!=0)
                 smeared_light_major_axis.append(smeared_light_major_axis_idx)
 
