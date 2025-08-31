@@ -55,8 +55,7 @@ def load_gaussian_tables():
 
     return tables, BT_tables
 
-# TODO: change directory when taking out of "new" folder
-LOOKUP_TABLES_PATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + "/lookup_tables"
+LOOKUP_TABLES_PATH = os.path.dirname(os.path.abspath(__file__)) + "/lookup_tables"
 NoordermeerLookupTables = load_noor_lookuptable()
 GaussianRingLookupTables, GaussianRingBTminLookupTables = load_gaussian_tables()
 
