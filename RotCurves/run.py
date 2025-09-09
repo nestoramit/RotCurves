@@ -13,18 +13,17 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from mcmc_fitter import full_mcmc_run
 
 
-def retrieve_run_info(num_walkers=300, num_burnins=100, num_steps=250, strecth_move_a=5., mp=True,
-                      Galaxies_to_run=["all"], show_plots=False, output=True, metadata_table_path=None, galaxies_outputs_dir=None):
+def retrieve_run_info(num_walkers=None, num_burnins=None, num_steps=None, strecth_move_a=4., mp=True,
+                      Galaxies_to_run=None, show_plots=False, output=True, metadata_table_path=None, galaxies_outputs_dir=None):
     if len(sys.argv) > 1:
         cluster = True
-        num_burnins = 100
-        num_walkers = int(sys.argv[1])
-        num_steps = int(sys.argv[2])
-        strecth_move_a = float(sys.argv[3])
-        metadata_table_path = sys.argv[4]
-        if galaxies_outputs_dir is None:
-            galaxies_outputs_dir = sys.argv[5]
-        Galaxies_to_run = [x for x in sys.argv[6:]]
+        num_burnins = 100 if num_burnins is None else num_burnins
+        num_walkers = int(sys.argv[1]) if num_walkers is None else num_walkers
+        num_steps = int(sys.argv[2]) if num_steps is None else num_steps
+        strecth_move_a = float(sys.argv[3]) if strecth_move_a is None else strecth_move_a
+        metadata_table_path = sys.argv[4] if metadata_table_path is None else metadata_table_path
+        galaxies_outputs_dir = sys.argv[5] if galaxies_outputs_dir is None else galaxies_outputs_dir
+        Galaxies_to_run = [x for x in sys.argv[6:]] if Galaxies_to_run is None else ["all"]
         mp = True
         niter_per_loop = 50
 
