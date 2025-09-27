@@ -132,8 +132,8 @@ class RotationCurveObject:
 
                 self.sigma_beam_x = self.sigma_beam
                 self.sigma_beam_y = self.sigma_beam * geometrical_factor_elliptical
-                self.sigma_beam_pixels_x = int(np.ceil(self.sigma_beam_x / self.dx))
-                self.sigma_beam_pixels_y = int(np.ceil(self.sigma_beam_y / self.dx))
+                self.sigma_beam_pixels_x = self.sigma_beam_x / self.dx
+                self.sigma_beam_pixels_y = self.sigma_beam_y / self.dx
                 self.oversample_edge_pixels_x = int(np.ceil(self.oversample_edge * self.sigma_beam_pixels_x))
                 self.oversample_edge_pixels_y = int(np.ceil(self.oversample_edge * self.sigma_beam_pixels_y))
                 self.sampling_edge_x = self.edge + self.oversample_edge_pixels_x * self.dx
@@ -147,8 +147,11 @@ class RotationCurveObject:
                 self.make_intrinsic_rotationCurve(self.sampling_rarray_2D)
 
                 # create the beam-smeared rotation curve along the major axis
-                self.smeared_with_inclination, self.smeared_light_profile = \
-                    self.apply_2D_beam_smearing(one_dimensional_vel=self.intrinsic_with_inclination,one_dimensional_rarray=self.sampling_rarray_2D, ndim=self.ndim)
+                self.smeared_with_inclination, self.smeared_light_profile = self.apply_2D_beam_smearing(
+                    one_dimensional_vel=self.intrinsic_with_inclination,
+                    one_dimensional_rarray=self.sampling_rarray_2D,
+                    ndim=self.ndim
+                )
                 self.smeared = self.smeared_with_inclination / np.sin(np.deg2rad(self.inclination))
                 V_average = self.smeared_with_inclination
                 V_squared = self.intrinsic_with_inclination ** 2
@@ -321,23 +324,17 @@ class RotationCurveObject:
         # normalize Igrid in case of really low values
         # Igrid /= np.max(Igrid)
 
-        # kernel_y = windows.gaussian(2 * self.oversample_edge_pixels_y + 1, self.sigma_beam_pixels_y)
-        # kernel_x = windows.gaussian(2 * self.oversample_edge_pixels_x + 1, self.sigma_beam_pixels_x)
-        # gaussian_kernel = np.outer(kernel_y, kernel_x)
-
-        # TODO: correction for rounding sigma_pixels
-        sigma_x = self.sigma_beam_x / self.dx
-        sigma_y = self.sigma_beam_y / self.dx
-        size_x = int(np.ceil(self.oversample_edge * sigma_x))
-        size_y = int(np.ceil(self.oversample_edge * sigma_y))
-        x = np.arange(-size_x, size_x + 1)
-        y = np.arange(-size_y, size_y + 1)
+        x = np.arange(-self.oversample_edge_pixels_x, self.oversample_edge_pixels_x + 1)
+        y = np.arange(-self.oversample_edge_pixels_y, self.oversample_edge_pixels_y + 1)
         xx, yy = np.meshgrid(x, y)
-        gaussian_kernel = np.exp(-(xx ** 2 / (2 * sigma_x ** 2) + yy ** 2 / (2 * sigma_y ** 2)))
+
+        gaussian_kernel = 1.
+        gaussian_kernel *= np.exp(-(xx ** 2 / (2 * self.oversample_edge_pixels_x ** 2)))
+        gaussian_kernel *= np.exp(-(yy ** 2 / (2 * self.oversample_edge_pixels_y ** 2)))
         gaussian_kernel /= np.sum(gaussian_kernel)
 
-        if ndim == 1.:
-            majoraxis_idx = round((rgrid.shape[0] - 1) / 2)
+        if ndim == 1:
+            majoraxis_idx = int((rgrid.shape[0] - 1) / 2)
             majoraxis = rgrid[majoraxis_idx]
             N = len(majoraxis)
 
@@ -350,14 +347,13 @@ class RotationCurveObject:
                 # x_max = idx + self.oversample_edge_pixels_x + 1
 
                 # Kernel shape
-                kernel_h, kernel_w = gaussian_kernel.shape  # e.g., (121, 97)
+                kernel_h, kernel_w = gaussian_kernel.shape
 
                 # When slicing from the grid, always extract a patch of the same shape
-                # (centered at (cy, cx) with half-widths)
                 half_h = kernel_h // 2
                 half_w = kernel_w // 2
 
-                # For a point at (y, x) in your grid:
+                # For a point at (y, x) in the grid:
                 y_min = majoraxis_idx - half_h
                 y_max = majoraxis_idx + half_h + 1
                 x_min = idx - half_w
