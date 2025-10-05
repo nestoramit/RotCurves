@@ -155,7 +155,7 @@ class SersicProfile(SurfaceDensityProfile):
         Calculate the logarithmic slope of the density profile at radius r.
         Used in calculations of the pressure support (e.g., Burkert+2010)
         """
-        x = self._calculate_normalized_radius(r)
+        x = self._normalized_radius(r)
         return - 1/self.n * x**(1/self.n)
 
 
@@ -220,7 +220,7 @@ class FreemanDisk(SurfaceDensityProfile):
         Calculate the logarithmic slope of the density profile at radius r.
         Used in calculations of the pressure support (e.g., Burkert+2010)
         """
-        x = self._calculate_normalized_radius(r)
+        x = self._normalized_radius(r)
         return - x
 
 
@@ -440,7 +440,7 @@ class GaussianRingProfile(SurfaceDensityProfile):
         return C * v2
 
     def dlnrho_dlnr(self, r):
-        x = self._calculate_normalized_radius(r)
+        x = self._normalized_radius(r)
         return - 1/2 * 2 * self.A * x * (x - 1)
 
 
