@@ -105,7 +105,7 @@ class GalaxyObject:
                                         "alpha": self.metadata["alpha_switch"],
                                         "i": self.metadata["inc_switch"]},
                          "fractions": self.metadata["f_switch"],
-                         "use Moster": self.metadata["use Moster"],
+                         "Moster_prior_for_mvir": self.metadata["Moster_prior_for_mvir"],
                          "adiabatic contraction": self.metadata["AC_switch"]}
 
         self.true_values = {"Re": self.metadata['Re_true'],

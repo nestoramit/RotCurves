@@ -16,10 +16,24 @@ from matplotlib.ticker import MultipleLocator
 from RotCurves.base_utils import figure, colors
 from RotCurves.rotation_curve import RotationCurveObject, calculate_fraction_at_re
 from RotCurves.mass_model import create_components
+from RotCurves.scaling_relations import log_Mvir_Moster2018
 
 # Define the logger
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger('RotCurves')
+
+# MCMC moves
+MCMC_MOVES = {
+    "StretchMove": emcee.moves.StretchMove,
+    "DEMove": emcee.moves.DEMove,
+    "KDEMove": emcee.moves.KDEMove,
+    "DESnookerMove": emcee.moves.DESnookerMove
+}
+def get_mcmc_move(move_name, weight, **kwargs):
+    move_class = MCMC_MOVES.get(move_name)
+    if move_class is None:
+        raise ValueError(f"Unknown MCMC move: {move_name}")
+    return (move_class(**kwargs), weight)
 
 """
 These functions are used to create MCMC variables, unpack values from theta, and add f to theta and samples.
@@ -36,7 +50,7 @@ def create_mcmc_variables(galaxy, mcmc_hparameters):
     initial_values = np.array(initial_values)
     ndim = len(initial_values)
     nwalkers = mcmc_hparameters["nwalkers"]
-    p0 = np.array([np.array(initial_values) + 1e-3 * np.random.randn(ndim) for i in range(nwalkers)])
+    p0 = np.array([np.array(initial_values) * (1 + 1e-1 * np.random.randn(ndim)) for i in range(nwalkers)])
 
     return p0
 
@@ -57,9 +71,6 @@ def unpack_values_from_theta(theta, galaxy):
             idx += 1
         else:
             parameters[parameter] = float(galaxy.priors[parameter].initial)
-
-    # if switches["use Moster"] == 1:
-    #     parameters['M_vir'] = Mvir_Moster2018(galaxy.z, parameters['M_baryon'])
 
     return parameters
 
@@ -220,6 +231,28 @@ def lnprior(theta, galaxy):
         # update the log-prior
         lp += prior.lnprob(value)
 
+        # For M_vir, penalize too low fdm at Re (fdm < 0.02) to avoid oversampling low M_vir
+        if parameter == 'M_vir':
+            fdm = calculate_fraction_at_re(
+                mass_components=create_components(
+                    include_halo=galaxy.mass_components_switches['halo'], include_disk=galaxy.mass_components_switches['disk'],
+                    include_ring=galaxy.mass_components_switches['ring'], include_bulge=galaxy.mass_components_switches['bulge'],
+                    z=galaxy.z, halo_profile=galaxy.halo_profile, logM_vir=value, c=unpack_values_from_theta(theta, galaxy)['c'],
+                    alpha=unpack_values_from_theta(theta, galaxy)['alpha'], AC=galaxy.switches['adiabatic contraction'],
+                    logM_baryon=unpack_values_from_theta(theta, galaxy)['M_baryon'],
+                    DT=unpack_values_from_theta(theta, galaxy)['DT'], disk_re=unpack_values_from_theta(theta, galaxy)['Re'],
+                    disk_n=galaxy.disk_n, disk_q=galaxy.disk_q, disk_lw=galaxy.disk_lw,
+                    BT=unpack_values_from_theta(theta, galaxy)['BT'], bulge_n=galaxy.bulge_n,
+                    bulge_q=galaxy.bulge_q, bulge_lw=galaxy.bulge_lw,
+                    ring_rpeak=unpack_values_from_theta(theta, galaxy)['R_peak'],
+                    ring_FWHM=unpack_values_from_theta(theta, galaxy)['ring_FWHM'],
+                    ring_lw=galaxy.ring_lw,
+                    running_in_cluster=False, apply2D=galaxy.apply_2D),
+                reval=unpack_values_from_theta(theta, galaxy)['Re']
+            )
+            fdm_prob = - 5e2 / (1 + np.exp(fdm/0.003))
+            lp += fdm_prob if fdm_prob < -1e-3 else 0
+
         # For B/T, check if the minimal bulge critirea for a ring is OK
         if galaxy.fit_goals['velocity'] or galaxy.fit_goals['dispersion']:
             if parameter == 'BT':
@@ -336,20 +369,107 @@ def find_maximum_frequency(data_array, bins, axis=0):
 
     return max_freq_values
 
+
 def check_convergence(sampler, mcmc_hparameters, old_taus):
     aurocorrelation_steps_thersh = mcmc_hparameters['aurocorrelation_steps_thersh']
     tau_tol = mcmc_hparameters['tau_tol']
+    target_neff = mcmc_hparameters['target_neff']
 
-    taus = emcee.autocorr.integrated_time(sampler.chain, tol=0)
+    taus = calculate_autocorrelation(sampler)
     acceptance_fraction = np.mean(sampler.acceptance_fraction)
+    neff = sampler.nwalkers * (sampler.iteration) / np.max(taus)
 
     converged = np.all(taus >= 0)
     converged &= np.all(taus * aurocorrelation_steps_thersh < sampler.iteration)
     converged &= np.all(np.abs(old_taus - taus) / taus < tau_tol)
+    converged &= (neff >= target_neff)
     converged &= (acceptance_fraction <= 0.5)
     converged &= (acceptance_fraction >= 0.2)
 
     return converged
+
+
+def calculate_autocorrelation(sampler, tol=5):
+    return sampler.get_autocorr_time(tol=tol)
+
+# def run_sampler_autostop(mcmc_hparameters, sampler, p0):
+#     """
+#     Adaptive MCMC runner that increases chain length until convergence
+#     or max_steps is reached. Determines burn-in automatically from τ.
+#     """
+#
+#     # --- Unpack hyperparameters ---
+#     max_steps = mcmc_hparameters.get("num_steps", 5000)
+#
+#     niter_per_loop = mcmc_hparameters.get("niter_per_loop", 200)
+#     burnin_factor = mcmc_hparameters.get("burnin_factor", 3)
+#     tau_tol = mcmc_hparameters.get("tau_tol", 0.05)
+#     autocorr_steps_thresh = mcmc_hparameters.get("aurocorrelation_steps_thersh", 20)
+#     target_neff = mcmc_hparameters.get("target_neff", 1000)
+#     in_cluster = bool(mcmc_hparameters.get("running in cluster", False))
+#
+#     # --- Initialize ---
+#     start_time = time.time()
+#     logger.info("Starting adaptive MCMC run...")
+#     old_taus = np.inf * np.ones(sampler.ndim)
+#     total_steps = 0
+#     pos = p0
+#
+#     # --- Iteratively run in chunks ---
+#     while total_steps < max_steps:
+#         nsteps = min(niter_per_loop, max_steps - total_steps)
+#         pos, prob, state = sampler.run_mcmc(pos, nsteps, progress=not in_cluster)
+#         total_steps += nsteps
+#
+#         try:
+#             taus = calculate_autocorrelation(sampler)
+#             tau_change = np.max(np.abs(old_taus - taus) / taus)
+#             estimated_burnin = int(burnin_factor * np.max(taus))
+#             neff = sampler.nwalkers * max(sampler.iteration - estimated_burnin, 1) / np.max(taus)
+#             acceptance = np.mean(sampler.acceptance_fraction)
+#
+#             logger.info(f"Step {total_steps}: mean τ = {np.mean(taus):.2f}, max τ = {np.max(taus):.2f}")
+#             logger.info(f"Effective N = {neff:.0f}, τ change = {tau_change:.3f}, acceptance = {acceptance:.3f}")
+#
+#             converged = (
+#                 np.all(taus > 0)
+#                 and np.all(taus * autocorr_steps_thresh < sampler.iteration)
+#                 and tau_change < tau_tol
+#                 and neff >= target_neff
+#                 and 0.2 <= acceptance <= 0.5
+#             )
+#
+#             if converged:
+#                 logger.info(f"Converged after {total_steps} iterations.")
+#                 break
+#
+#             old_taus = taus
+#
+#         except emcee.autocorr.AutocorrError:
+#             logger.info(f"AutocorrError at {total_steps} steps — chain too short to estimate τ.")
+#             continue
+#
+#     else:
+#         logger.info(f"Reached max steps ({max_steps}) without convergence.")
+#
+#     # --- Final τ and burn-in estimation ---
+#     try:
+#         final_taus = calculate_autocorrelation(sampler)
+#         burnin = int(burnin_factor * np.max(final_taus))
+#     except emcee.autocorr.AutocorrError:
+#         final_taus = np.inf * np.ones(sampler.ndim)
+#         burnin = total_steps // 4  # fallback
+#
+#     burnin = min(burnin, total_steps // 4)  # sanity cap
+#
+#     mcmc_hparameters["niters_converged"] = total_steps
+#     mcmc_hparameters["burnin"] = burnin
+#
+#     logger.info(f"Final τ = {np.mean(final_taus):.2f} ± {np.std(final_taus):.2f}")
+#     logger.info(f"Estimated burn-in: {burnin} steps")
+#     logger.info(f"Total elapsed time: {round((time.time() - start_time) / 60, 1)} minutes")
+#
+#     return sampler, burnin
 
 
 def run_sampler(mcmc_hparameters, sampler, p0):
@@ -366,37 +486,51 @@ def run_sampler(mcmc_hparameters, sampler, p0):
     logger.info("Running iterations...")
 
     # Split iterations to chunks and check convergence at each chunk
-    # niter_per_loop --> num of chunks
-    # converged if num_iter > 100*tau for every param, AND if tau has changed less than 5%
+    # niter_per_loop -> num of chunks
+    # converged if num_iter > 20*tau for every param, AND if tau has changed less than 5%
     niter_per_loop = mcmc_hparameters['niter_per_loop']
-    if niter_per_loop is None:
-        niter_per_loop = nburnin
-    niters_converged = niter
 
+    # default: run all iterations in one go
+    if niter_per_loop is None or niter_per_loop == 0:
+        niter_per_loop = niter
+
+    # run in chunks of niter_per_loop
     niter_to_run = min(niter, niter_per_loop)
     num_of_loops = int(np.ceil(niter / niter_per_loop))
     old_taus = np.zeros(sampler.ndim)
     for idx in range(1, int(num_of_loops)+1, 1):
         pos, prob, state = sampler.run_mcmc(initial_state=p0_new, nsteps=niter_to_run, progress=(not bool(mcmc_hparameters["running in cluster"])))
 
-        logger.info('autocorrelation time after %3d iterations: %s' % (sampler.iteration, emcee.autocorr.integrated_time(sampler.chain, tol=0)))
+        logger.info('autocorrelation time after %3d iterations: %s' % (
+            sampler.iteration,
+            calculate_autocorrelation(sampler)
+        ))
         logger.info('acceptance ratio after %3d iterations:     %2.3f (%2.3f)' % (sampler.iteration, np.mean(sampler.acceptance_fraction), np.std(sampler.acceptance_fraction)))
 
         # Check convergence
         converged = check_convergence(sampler, mcmc_hparameters, old_taus)
         if converged:
-            logger.info('CONVERGED after %3d iterations!' % sampler.iteration)
+            logger.info('CONVERGED after %d iterations!' % sampler.iteration)
             niters_converged = int(sampler.iteration)
             break
         elif int(sampler.iteration) >= niter:
-            logger.info(r'didnt converge, finished after %3d iterations ...' % sampler.iteration)
+            logger.info(r'didnt converge, finished after %d iterations ...' % sampler.iteration)
+            niters_converged = int(sampler.iteration)
             break
         p0_new = pos
         niter_to_run = min(niter - idx*niter_per_loop, niter_per_loop)
-        old_taus = emcee.autocorr.integrated_time(sampler.chain, tol=0)
+        old_taus = calculate_autocorrelation(sampler)
+
+    taus = calculate_autocorrelation(sampler)
+    acceptance_fraction = np.mean(sampler.acceptance_fraction)
+    neff = sampler.nwalkers * (sampler.iteration) / np.max(taus)
 
     mcmc_hparameters['niters_converged'] = niters_converged
+
     logger.info("Finished iterations: %s minutes\n" % round((time.time() - starttime) / 60, 1))
+    logger.info(f"   max tau:             {np.max(taus):.0f}")
+    logger.info(f"   acceptance rate:     {acceptance_fraction:.2f}")
+    logger.info(f"   independent samples: {neff:.0f}")
 
     return sampler
 
@@ -413,30 +547,40 @@ def run_mcmc(galaxy, mcmc_hparameters):
     backend = emcee.backends.HDFBackend(backend_filename)
     backend.reset(nwalkers, ndim)
 
+    moves = [
+        get_mcmc_move(
+            move_name,
+            weight,
+            **({"a": mcmc_hparameters["strecth_move_a"]} if move_name == "StretchMove" else {})
+        )
+        for move_name, weight in mcmc_hparameters["moves"].items()
+    ]
     if mcmc_hparameters["multiprocessing"]:
         with Pool() as pool:
-            sampler = emcee.EnsembleSampler(nwalkers, ndim, log_prob_fn=lnprob, args=args, pool=pool, backend=backend,
-                                            moves=[(emcee.moves.StretchMove(a=mcmc_hparameters['strecth_move_a']), 1.)])
+            sampler = emcee.EnsembleSampler(
+                nwalkers,
+                ndim,
+                log_prob_fn=lnprob,
+                args=args,
+                pool=pool,
+                backend=backend,
+                moves=moves
+            )
             sampler = run_sampler(mcmc_hparameters, sampler, p0)
-
     else:
-        sampler = emcee.EnsembleSampler(nwalkers, ndim, lnprob, args=args, backend=backend,
-                                        moves=[(emcee.moves.StretchMove(a=mcmc_hparameters['strecth_move_a']), 1.)])
+        sampler = emcee.EnsembleSampler(
+            nwalkers,
+            ndim,
+            lnprob,
+            args=args,
+            backend=backend,
+            moves=moves
+        )
         sampler = run_sampler(mcmc_hparameters, sampler, p0)
 
     starttime = time.time()
     logger.info("Adding fractions & arranging data...")
     samples = sampler.flatchain
-
-    # if switches["use Moster"] and switches["parameters"]["M_vir"]:
-    #     for theta in samples:
-    #         mvir_idx = list(switches["parameters"].keys()).index("M_vir")
-    #         mbar_idx = list(switches["parameters"].keys()).index("M_baryon")
-    #         if isinstance(galaxy.scales["M_baryon"], (float, int)) and isinstance(galaxy.scales["M_vir"], (float, int)):
-    #             theta[mvir_idx] = Mvir_Moster2018(galaxy.z, theta[mbar_idx] * galaxy.scales["M_baryon"]) / galaxy.scales["M_vir"]
-    #         elif galaxy.scales["M_baryon"] == "log_mass" and galaxy.scales["M_vir"] == "log_mass":
-    #             theta[mvir_idx] = np.log10(
-    #                 Mvir_Moster2018(galaxy.z, np.power(10, theta[mbar_idx]) * M_solar) / M_solar)
 
     if switches["fractions"]:
         ndim += 1
@@ -651,7 +795,7 @@ runtime: %s minutes
          datetime.datetime.now(), np.round(mcmc_hparameters['runtime'] / 60, 0))
     f.write(intro)
 
-    opening = '''MCMC fitting goals
+    opening = '''MCMC fitting setup
 %s
     fit flux: %01d
     fit velocity: %01d
@@ -660,9 +804,10 @@ num walkers: %3.0f
 num burnins: %3.0f
 num iterations: %3.0f
     converged after: %3.0f
+moves: %s
 ''' % (sep, galaxy.fit_goals['flux'], galaxy.fit_goals['velocity'], galaxy.fit_goals['dispersion'],
        mcmc_hparameters['nwalkers'], mcmc_hparameters['niter'][0], mcmc_hparameters['niter'][1],
-       mcmc_hparameters['niters_converged'])
+       mcmc_hparameters['niters_converged'], mcmc_hparameters['moves'])
     f.write(opening)
 
     # Write bestfit params
@@ -799,13 +944,16 @@ red_chisq:          %2.2f
     red_chisq_disp: %2.2f
 mean acceptance ratio:    %2.2f (+/- %2.2f)
 stretch move a:    %2.2f    # sampler performs a move with size sampled uniformly from [1/a, a], with size 1/sqrt(a) 
-mean auto-correlation time (tau):    %2.2f
+max auto-correlation time (tau):    %2.2f
+independent samples:    %.0f
 ''' % (sep, galaxy.dof, galaxy.bestfit_chisq['total'], galaxy.bestfit_chisq['flux'],
        galaxy.bestfit_chisq['velocity'], galaxy.bestfit_chisq['disp'],
        np.mean(sampler.acceptance_fraction),
        np.std(sampler.acceptance_fraction),
        mcmc_hparameters['strecth_move_a'],
-       np.mean(emcee.autocorr.integrated_time(sampler.chain, tol=0)))
+       np.max(calculate_autocorrelation(sampler)),
+       sampler.nwalkers * (sampler.iteration) / np.max(calculate_autocorrelation(sampler))
+       )
     f.write(mcmc_fitting_assesment)
 
     # Write taus for every parameter
@@ -813,7 +961,9 @@ mean auto-correlation time (tau):    %2.2f
     i = 0
     for param in galaxy.switches['parameters']:
         if galaxy.switches['parameters'][param]:
-            tau = '    tau %s:%s%2.2f\n' % (param, ' '*(12-len(param)), emcee.autocorr.integrated_time(sampler.chain, tol=0)[i])
+            tau = '    tau %s:%s%2.2f\n' % (
+                param, ' '*(12-len(param)), calculate_autocorrelation(sampler)[i]
+            )
             taus += tau
             i += 1
     f.write(taus)
@@ -834,10 +984,7 @@ def cornerplot_labels(switches, add_f=True):
             elif switch == "M_baryon":
                 labels.append(r"$log M_{baryon}$")
             elif switch == "M_vir":
-                if switches["use Moster"]:
-                    labels.append(r"$\log {M_{vir}^{SMHM}}$")
-                else:
-                    labels.append(r"$log M_{vir}$")
+                labels.append(r"$log M_{vir}$")
             elif switch == "R_peak":
                 labels.append("$R_{peak}$")
             elif switch == "ring_FWHM":

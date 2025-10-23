@@ -232,7 +232,7 @@ class RotationCurveObject:
             self.Vh = self.halo.vcirc(R_array)
 
         self.get_dispersion_profile(R_array, functional_form=self.dispersion_function)
-        self.V2sigma = np.zeros_like(R_array)
+        self.V2sigma = np.zeros_like(absR)
         ### Regular exponential profile (using re)
         if self.pressure_support in ['exponential', 'Exponential']:
             if self.disk is not None:
@@ -242,7 +242,6 @@ class RotationCurveObject:
             else:
                 logger.warning('PRESSURE SUPPORT: exponential: No disk or rings component found, assuming Re=1 kpc...')
                 re = 1.
-
             self.V2sigma += 3.36 * (absR / re) * self.sigma_profile ** 2
 
         ### General Burkert(2010) formula using analytical derivatives of density profiles
@@ -251,7 +250,8 @@ class RotationCurveObject:
                 if comp is not None:
                     if comp._is_massive():
                         # self.V2sigma += 2 * self.sigma_profile ** 2 * (absR/comp.r_s) * comp.dlnrho_dlnr(absR)
-                        self.V2sigma = self.V2sigma + 2 * self.sigma_profile ** 2 * comp.dlnrho_dlnr(absR)
+                        self.V2sigma = (self.V2sigma +
+                                        2 * self.sigma_profile ** 2 * comp.dlnrho_dlnr(absR))
 
         self.V2sigma = np.nan_to_num(self.V2sigma)
         # Vsigma_interim = np.copy(self.V2sigma)
@@ -324,13 +324,13 @@ class RotationCurveObject:
         # normalize Igrid in case of really low values
         # Igrid /= np.max(Igrid)
 
-        x = np.arange(-self.oversample_edge_pixels_x, self.oversample_edge_pixels_x + 1)
-        y = np.arange(-self.oversample_edge_pixels_y, self.oversample_edge_pixels_y + 1)
-        xx, yy = np.meshgrid(x, y)
+        kernel_x = np.arange(-self.oversample_edge_pixels_x, self.oversample_edge_pixels_x + 1)
+        kernel_y = np.arange(-self.oversample_edge_pixels_y, self.oversample_edge_pixels_y + 1)
+        kernel_xx, kernel_yy = np.meshgrid(kernel_x, kernel_y)
 
         gaussian_kernel = 1.
-        gaussian_kernel *= np.exp(-(xx ** 2 / (2 * self.oversample_edge_pixels_x ** 2)))
-        gaussian_kernel *= np.exp(-(yy ** 2 / (2 * self.oversample_edge_pixels_y ** 2)))
+        gaussian_kernel *= np.exp(-(kernel_xx ** 2 / (2 * self.sigma_beam_pixels_x ** 2)))
+        gaussian_kernel *= np.exp(-(kernel_yy ** 2 / (2 * self.sigma_beam_pixels_y ** 2)))
         gaussian_kernel /= np.sum(gaussian_kernel)
 
         if ndim == 1:
@@ -411,8 +411,14 @@ class RotationCurveObject:
 
 def calculate_fraction_at_re(mass_components=None, reval=None):
     if reval is None:
-        print('r_fdm not specified. Assuming reval = 1kpc...')
-
+        print('r_fdm not specified. Assuming reval = r_eff_disk...')
+        if mass_components['disk'] is not None:
+            reval = mass_components['disk'].r_eff
+        elif mass_components['ring'] is not None:
+            reval = mass_components['ring'].r_eff
+        else:
+            print('No disk or ring component found to estimate reval. Returning 1 for fdm...')
+            return 1.
 
     if mass_components['halo'] is None:
         print('Cant calculate DM fractions for a model with no halo!')

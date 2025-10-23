@@ -13,8 +13,22 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from mcmc_fitter import full_mcmc_run
 
 
-def retrieve_run_info(num_walkers=None, num_burnins=None, num_steps=None, strecth_move_a=4., mp=True,
-                      Galaxies_to_run=None, show_plots=False, output=True, metadata_table_path=None, galaxies_outputs_dir=None):
+def retrieve_run_info(
+        num_walkers=200,
+        num_burnins=100,
+        burnin_factor=3,
+        num_steps=1000,
+        niter_per_loop=500,
+        strecth_move_a=2.,
+        mcmc_moves={"StretchMove": 1.},
+        mp=True,
+        Galaxies_to_run=None,
+        show_plots=False,
+        output=True,
+        metadata_table_path=None,
+        galaxies_outputs_dir=None
+):
+
     if len(sys.argv) > 1:
         cluster = True
         num_burnins = 100 if num_burnins is None else num_burnins
@@ -25,26 +39,29 @@ def retrieve_run_info(num_walkers=None, num_burnins=None, num_steps=None, strect
         galaxies_outputs_dir = sys.argv[5] if galaxies_outputs_dir is None else galaxies_outputs_dir
         Galaxies_to_run = [x for x in sys.argv[6:]] if Galaxies_to_run is None else ["all"]
         mp = True
-        niter_per_loop = 50
+        niter_per_loop = niter_per_loop
 
     else:
         cluster = False
         if galaxies_outputs_dir is None:
             galaxies_outputs_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'default_output_folder')
         Galaxies_to_run = Galaxies_to_run
-        niter_per_loop = 50
+        niter_per_loop = niter_per_loop
 
     mcmc_hyperparameters = {
         "nwalkers": num_walkers,
         "niter": [num_burnins, num_steps],
+        "burnin_factor": burnin_factor,
         "multiprocessing": mp,
         "show plots": show_plots,
         "output files": output,
         "running in cluster": cluster,
         "niter_per_loop": niter_per_loop,
-        "tau_tol": 0.05,
+        "strecth_move_a": strecth_move_a,
+        "moves": mcmc_moves,
+        "tau_tol": 0.03,
         "aurocorrelation_steps_thersh": 50,
-        "strecth_move_a": strecth_move_a
+        'target_neff': 1000,
     }
 
     return metadata_table_path, galaxies_outputs_dir, Galaxies_to_run, mcmc_hyperparameters
