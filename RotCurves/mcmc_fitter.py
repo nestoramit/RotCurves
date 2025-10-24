@@ -232,6 +232,7 @@ def lnprior(theta, galaxy):
         lp += prior.lnprob(value)
 
         # For M_vir, penalize too low fdm at Re (fdm < 0.02) to avoid oversampling low M_vir
+        # and use Moster18 relation as a soft prior
         if parameter == 'M_vir':
             fdm = calculate_fraction_at_re(
                 mass_components=create_components(
@@ -250,8 +251,14 @@ def lnprior(theta, galaxy):
                     running_in_cluster=False, apply2D=galaxy.apply_2D),
                 reval=unpack_values_from_theta(theta, galaxy)['Re']
             )
-            fdm_prob = - 5e2 / (1 + np.exp(fdm/0.003))
+            # fdm_prob = - 5e2 / (1 + np.exp(fdm/0.003))
+            fdm_prob = - 20 * np.exp(-fdm / 0.015)
             lp += fdm_prob if fdm_prob < -1e-3 else 0
+
+            # Moster+2018 relation as a soft prior
+            if galaxy.switches["Moster_prior_for_mvir"]:
+                M_vir_moster = log_Mvir_Moster2018(z=galaxy.z, log_mstar=unpack_values_from_theta(theta, galaxy)['M_baryon'])
+                lp += -0.5 * ((value - M_vir_moster) / 2)**2
 
         # For B/T, check if the minimal bulge critirea for a ring is OK
         if galaxy.fit_goals['velocity'] or galaxy.fit_goals['dispersion']:
