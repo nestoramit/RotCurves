@@ -10,8 +10,8 @@ from RotCurves.base_utils import make_pretty_plot
 sys.path.insert(0, r"/mnt/sdceph/users/ycohen/Nestor/scripts")
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from mcmc_fitter import full_mcmc_run
-
+# from mcmc_fitter import full_mcmc_run
+from mcmc_fitter import MCMC_fitter
 
 def retrieve_run_info(
         num_walkers=200,
@@ -50,14 +50,15 @@ def retrieve_run_info(
 
     mcmc_hyperparameters = {
         "nwalkers": num_walkers,
-        "niter": [num_burnins, num_steps],
+        "nsteps": num_steps,
+        "nburn": num_burnins,
         "burnin_factor": burnin_factor,
         "multiprocessing": mp,
         "show plots": show_plots,
         "output files": output,
         "running in cluster": cluster,
         "niter_per_loop": niter_per_loop,
-        "strecth_move_a": strecth_move_a,
+        "stretch_move_a": strecth_move_a,
         "moves": mcmc_moves,
         "tau_tol": 0.03,
         "aurocorrelation_steps_thersh": 50,
@@ -103,7 +104,18 @@ def MCMC_run(galaxies_to_run=["all"], metadata_table_path=None, galaxies_outputs
                                   running_in_cluster=mcmc_hyperparameters["running in cluster"])
             print("AC is on!" if Galaxy.switches["adiabatic contraction"] else "AC is off...")
 
-            results_table, walkers_results = full_mcmc_run(Galaxy, mcmc_hyperparameters)
+            mcmc_fitter = MCMC_fitter(
+                galaxy=Galaxy,
+                nwalkers=mcmc_hyperparameters["nwalkers"],
+                nsteps=mcmc_hyperparameters["niter"],
+                nburn=mcmc_hyperparameters["nburn"],
+                niter_per_loop=mcmc_hyperparameters["niter_per_loop"],
+                moves=mcmc_hyperparameters["moves"],
+                stretch_move_a=mcmc_hyperparameters["stretch_move_a"],
+                use_multiprocessing=mcmc_hyperparameters["multiprocessing"]
+            )
+            mcmc_fitter.full_mcmc_run()
+            # results_table, walkers_results = full_mcmc_run(Galaxy, mcmc_hyperparameters)
 
             runtime = time.time() - starttime
             print("\nfinished: %s/%s. Time elapsed: %s:%s:%s \n" %

@@ -14,8 +14,7 @@ def create_components(include_halo=False, include_disk=False, include_ring=False
                       z=None, halo_profile='NFW', logM_vir=None, c=None, alpha=1., beta=3., gamma=1., AC=False,
                       logM_baryon=None, DT=None, disk_re=None, disk_n=1.0, disk_q=0.2, disk_lw=True,
                       BT=None, bulge_n=4.0, bulge_q=1.0, bulge_lw=False,
-                      ring_rpeak=None, ring_FWHM=None, ring_lw=False,
-                      running_in_cluster=False, apply2D=True):
+                      ring_rpeak=None, ring_FWHM=None, ring_lw=False):
     """
     :param mass_components_switches: dictionary of component switches    [halo, disk, ring, bulge]
     :param z: redshift

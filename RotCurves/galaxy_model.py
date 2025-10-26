@@ -5,7 +5,7 @@ import numpy as np
 from astropy.cosmology import Planck18
 import datetime
 
-from RotCurves.mcmc_fitter import Prior
+# from RotCurves.mcmc_fitter import Prior
 from RotCurves.base_utils import create_r_space
 from RotCurves.rotation_curve import calculate_fraction_at_re
 from RotCurves.mass_model import create_components
@@ -13,6 +13,36 @@ from RotCurves.mass_model import create_components
 # Define the logger
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger('RotCurves')
+
+class Prior:
+    def __init__(self, type, initial_value, min_value, max_value, gauss_sigma):
+        self.type = self.type_altnames(type)
+        self.initial = initial_value
+        self.min = min_value
+        self.max = max_value
+        self.sig = gauss_sigma
+
+    def type_altnames(self, type):
+        if type in [ 'fixed', 'Fixed']:
+            return 'fixed'
+        if type in ['uniform', 'u', 'Uniform', 'flat', 'f']:
+            return 'uniform'
+        elif type in ['gaussian', 'g', 'Gaussian']:
+            return 'gaussian'
+        else:
+            raise ValueError(f"Unknown prior type: {self.type}")
+
+    def lnprob(self, value):
+        if self.type == 'fixed':
+            return 0.0
+        elif self.min <= value <= self.max:
+            if self.type == 'uniform':
+                return 0.0
+            if self.type == 'gaussian':
+                return -1/2 * ((value - self.initial) / self.sig)**2
+        else:
+            return - np.inf
+
 
 class GalaxyObject:
     def __init__(self, name, metadata_table_path=None, obsdata=None, galaxy_outputs_folder=None, obsdata_dir=None, running_in_cluster=False):
@@ -121,20 +151,21 @@ class GalaxyObject:
                             "alpha": self.metadata['alpha_true'],
                             "f": None}
 
-        self.mass_components = create_components(include_halo=self.mass_components_switches['halo'],
-                                                 include_disk=self.mass_components_switches['disk'],
-                                                 include_ring=self.mass_components_switches['ring'],
-                                                 include_bulge=self.mass_components_switches['bulge'], z=self.z,
-                                                 halo_profile=self.halo_profile, logM_vir=self.true_values['M_vir'],
-                                                 c=self.true_values['c'], alpha=self.true_values['alpha'],
-                                                 AC=self.switches['adiabatic contraction'],
-                                                 logM_baryon=self.true_values['M_baryon'], DT=self.true_values['DT'],
-                                                 disk_re=self.true_values['Re'], disk_n=self.disk_n, disk_q=self.disk_q,
-                                                 disk_lw=bool(self.disk_lw), BT=self.true_values['BT'],
-                                                 bulge_n=self.bulge_n, bulge_q=self.bulge_q,
-                                                 bulge_lw=bool(self.bulge_lw), ring_FWHM=self.true_values['ring_FWHM'],
-                                                 ring_rpeak=self.true_values['R_peak'], ring_lw=bool(self.ring_lw),
-                                                 running_in_cluster=self.running_in_cluster, apply2D=self.apply_2D)
+        self.mass_components = create_components(
+            include_halo=self.mass_components_switches['halo'],
+            include_disk=self.mass_components_switches['disk'],
+            include_ring=self.mass_components_switches['ring'],
+            include_bulge=self.mass_components_switches['bulge'], z=self.z,
+            halo_profile=self.halo_profile, logM_vir=self.true_values['M_vir'],
+            c=self.true_values['c'], alpha=self.true_values['alpha'],
+            AC=self.switches['adiabatic contraction'],
+            logM_baryon=self.true_values['M_baryon'], DT=self.true_values['DT'],
+            disk_re=self.true_values['Re'], disk_n=self.disk_n, disk_q=self.disk_q,
+            disk_lw=bool(self.disk_lw), BT=self.true_values['BT'],
+            bulge_n=self.bulge_n, bulge_q=self.bulge_q,
+            bulge_lw=bool(self.bulge_lw), ring_FWHM=self.true_values['ring_FWHM'],
+            ring_rpeak=self.true_values['R_peak'], ring_lw=bool(self.ring_lw)
+        )
         if self.mass_components_switches['halo']:
             if self.mass_components_switches['disk']:
                 true_f = calculate_fraction_at_re(mass_components=self.mass_components, reval=self.mass_components['disk'].r_eff)
