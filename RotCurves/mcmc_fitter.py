@@ -36,8 +36,6 @@ def get_mcmc_move(move_name, weight, **kwargs):
         raise ValueError(f"Unknown MCMC move: {move_name}")
     return (move_class(**kwargs), weight)
 
-
-
 class MCMC_fitter:
     def __init__(
             self,
@@ -49,7 +47,7 @@ class MCMC_fitter:
             nburn: int=300,
             auto_stop: bool=False,
             niter_per_loop: int=300,
-            moves: dict={"StretchMove": 1.0},
+            moves: dict={"StretchMove": 0.6, "DEMove": 0.3, "KDEMove": 0.1},,
             stretch_move_a: float=2.0,
             tau_to_steps_ratio: int=10,
             tau_change_tol: float=0.03,
