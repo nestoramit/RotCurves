@@ -33,15 +33,18 @@ class Prior:
             raise ValueError(f"Unknown prior type: {self.type}")
 
     def lnprob(self, value):
+        value = np.atleast_1d(np.asarray(value))
+        infmask = (value >= self.min) & (value <= self.max)
+        prob = np.full_like(value, -np.inf, dtype=float)
+
         if self.type == 'fixed':
-            return 0.0
-        elif self.min <= value <= self.max:
-            if self.type == 'uniform':
-                return 0.0
-            if self.type == 'gaussian':
-                return -1/2 * ((value - self.initial) / self.sig)**2
-        else:
-            return - np.inf
+            prob[:] = 0.0
+        elif self.type == 'uniform':
+            prob[infmask] = 0.0
+        elif self.type == 'gaussian':
+            prob[infmask] = -0.5 * ((value[infmask] - self.initial) / self.sig)**2
+
+        return prob
 
 
 class GalaxyObject:

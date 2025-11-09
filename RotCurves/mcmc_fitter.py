@@ -47,8 +47,8 @@ class MCMC_fitter:
             nburn: int=300,
             auto_stop: bool=False,
             niter_per_loop: int=300,
-            moves: dict={"StretchMove": 0.6, "DEMove": 0.3, "KDEMove": 0.1},,
-            stretch_move_a: float=2.0,
+            moves: dict={"StretchMove": 0.6, "DEMove": 0.3, "KDEMove": 0.1},
+            stretch_move_a: float=2.5,
             tau_to_steps_ratio: int=10,
             tau_change_tol: float=0.03,
             target_independent_samples: int=1000,
@@ -1192,20 +1192,48 @@ class MCMC_fitter:
             if not os.path.isdir(self.galaxy.output_dir) or not os.path.exists(self.galaxy.output_dir):
                 os.mkdir(self.galaxy.output_dir)
             plt.savefig("/".join([self.galaxy.output_dir, filename]))
-        plt.close()
+        plt.close(fig)
 
     def plot_mcmcCurves(self, mcmc_rotation_curves):
-        fig, ax = plt.subplots()
-        for mcmc_curve in mcmc_rotation_curves:
-            ax.plot(self.galaxy.radial_space["array"], mcmc_curve, color="g", alpha=0.1)
-        ax.errorbar(self.galaxy.obsdata_r, self.galaxy.obsdata_V, self.galaxy.obsdata_V_err, color='k', fmt=".", label="data")
+        valid_curves = [c for c in mcmc_rotation_curves if np.all(np.isfinite(c))]
+        if len(valid_curves) == 0:
+            print("Warning: No valid data to plot MCMC rotation curves.")
+            return
 
-        # ax.set_title("%s - Rotation Curves\n"
-        #              "Free parameters: %s" % (galaxy.name, [x for x in switches["parameters"] if switches["parameters"][x] == 1]))
+        fig, ax = plt.subplots()
+        for mcmc_curve in valid_curves:
+            ax.plot(
+                self.galaxy.radial_space["array"],
+                mcmc_curve,
+                color="g",
+                alpha=0.1
+            )
+
+        ax.errorbar(
+            self.galaxy.obsdata_r,
+            self.galaxy.obsdata_V,
+            self.galaxy.obsdata_V_err,
+            color='k',
+            fmt=".",
+            label="data"
+        )
+
         buffer = 0.2
-        ax.set_ylim(np.minimum(np.min(self.galaxy.obsdata_V), np.min(mcmc_rotation_curves)) * (1 + buffer),
-                    np.maximum(np.max(self.galaxy.obsdata_V), np.max(mcmc_rotation_curves)) * (1 + buffer))
-        ax.set_xlim(np.min(self.galaxy.obsdata_r) * (1 + buffer), np.max(self.galaxy.obsdata_r) * (1 + buffer))
+        vmin = np.nanmin([np.nanmin(self.galaxy.obsdata_V), np.nanmin(valid_curves)])
+        vmax = np.nanmax([np.nanmax(self.galaxy.obsdata_V), np.nanmax(valid_curves)])
+        ax.set_ylim(vmin * (1 + buffer), vmax * (1 + buffer))
+        ax.set_xlim(np.min(self.galaxy.obsdata_r) * (1 + buffer),
+                    np.max(self.galaxy.obsdata_r) * (1 + buffer))
+
+        # for mcmc_curve in mcmc_rotation_curves:
+        #     ax.plot(self.galaxy.radial_space["array"], mcmc_curve, color="g", alpha=0.1)
+        # ax.errorbar(self.galaxy.obsdata_r, self.galaxy.obsdata_V, self.galaxy.obsdata_V_err, color='k', fmt=".", label="data")
+        #
+        # buffer = 0.2
+        # ax.set_ylim(np.minimum(np.min(self.galaxy.obsdata_V), np.min(mcmc_rotation_curves)) * (1 + buffer),
+        #             np.maximum(np.max(self.galaxy.obsdata_V), np.max(mcmc_rotation_curves)) * (1 + buffer))
+        # ax.set_xlim(np.min(self.galaxy.obsdata_r) * (1 + buffer), np.max(self.galaxy.obsdata_r) * (1 + buffer))
+
         ax.xaxis.set_major_locator(MultipleLocator(5))
         ax.xaxis.set_minor_locator(MultipleLocator(1))
         ax.yaxis.set_major_locator(MultipleLocator(50))
@@ -1219,7 +1247,7 @@ class MCMC_fitter:
             if not os.path.isdir(self.galaxy.output_dir) or not os.path.exists(self.galaxy.output_dir):
                 os.mkdir(self.galaxy.output_dir)
             plt.savefig("/".join([self.galaxy.output_dir, filename]))
-        plt.close()
+        plt.close(fig)
 
 
     def plot_mcmcDispersion(self, mcmc_dispersion):

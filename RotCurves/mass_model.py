@@ -51,6 +51,9 @@ def create_components(include_halo=False, include_disk=False, include_ring=False
     ring = None
     bulge = None
 
+    BT = np.clip(BT, 1e-2, 1-1e-2) if BT is not None else None
+    DT = np.clip(DT, 1e-2, 1-1e-2) if DT is not None else None
+
     if include_disk:
         if include_ring:
             RT = 1 - BT - DT
