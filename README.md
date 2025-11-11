@@ -13,11 +13,19 @@ The fitting procedure peforms best for resolved systems, with a beam size that i
 
 For Additional information see Nestor Shachar et al. 2025. 
 
-### Installation
+## Installation
+The package can be installed simply by the following pip command:
+```
+pip install rotcurves
+```
+or if running from cmd:
+```
+python -m pip install rotcurves
+```
 
-### Usage
+## Usage
 
-### Dependencies
+## Dependencies
 - astropy==6.1.2
 - corner==2.2.3
 - emcee==3.1.6
@@ -28,9 +36,9 @@ For Additional information see Nestor Shachar et al. 2025.
 - scipy==1.16.3
 - seaborn==0.13.2
 
-### Citations
-If used in a scientific paper, please make sure to cite: Nestor Shachar et al. 2025.
-### Contact
-Please feel free to reach us at RotCurves@gmail.com.
+## Citations
+If you use $\texttt{RotCurves}$ we ask that you cite the following paper:
+- Nestor Shachar et al. 2025.
 
-### License
+## Contact
+We welcome all comments, you can reach us at RotCurves@gmail.com.
