@@ -1,16 +1,17 @@
-from time import time_ns
 import numpy as np
-import astropy.constants as c
 from astropy.cosmology import Planck18
 from scipy.special import j0, j1
-# from scipy.integrate import quad
 import warnings
 import logging
 
-from RotCurves.base_utils import integrate_quad_list, solve_numerical_using_brentq
+from RotCurves.base_utils import (
+    integrate_quad_list,
+    solve_numerical_using_brentq,
+)
+from RotCurves.const import (
+    G_CONST
+)
 
-# Define constants as global variables
-G_CONST = c.G.to('kpc km2 / (s2 Msun)').value
 
 # Define the logger
 logging.basicConfig(level=logging.INFO)

@@ -1,7 +1,6 @@
 import numpy as np
 
 
-
 def log_Mvir_Moster2018(z, log_mstar):
     z1 = 1 + z
     n = np.power(10, 1.507 - 0.124 * z / z1)

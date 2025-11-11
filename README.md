@@ -18,8 +18,15 @@ For Additional information see Nestor Shachar et al. 2025.
 ### Usage
 
 ### Dependencies
-- A
-- B
+- astropy==6.1.2
+- corner==2.2.3
+- emcee==3.1.6
+- matplotlib==3.10.7
+- numpy==2.3.4
+- pandas==2.3.3
+- parmap==1.7.0
+- scipy==1.16.3
+- seaborn==0.13.2
 
 ### Citations
 If used in a scientific paper, please make sure to cite: Nestor Shachar et al. 2025.

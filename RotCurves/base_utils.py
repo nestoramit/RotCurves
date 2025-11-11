@@ -1,19 +1,12 @@
 import numpy as np
-from astropy.units.quantity_helper.function_helpers import solve
 from scipy.integrate import quad
 from scipy.optimize import brentq
-from scipy.special import gammainc, gamma
 import seaborn as sns
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 from matplotlib.ticker import MultipleLocator
 from concurrent.futures import ThreadPoolExecutor
-from time import time_ns
 
-"""
-Plotting
-"""
-# ------------------------------------ Functions for plotting ------------------------------------
 
 colors_list = sns.color_palette('deep', n_colors=10)
 colors = {
@@ -259,11 +252,3 @@ def create_r_space(edge, resolution):
     R = np.array([*minus, 0, *plus])
 
     return R
-
-if __name__ == '__main__':
-
-    n = 4.
-    func = lambda x: gammainc(2*n, x) - 0.5
-    start = time_ns()
-    print(solve_numerical_using_brentq(func, p0=1e4, N=100))
-    print(f"{time_ns() - start} ns")

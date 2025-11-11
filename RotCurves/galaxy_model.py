@@ -5,7 +5,6 @@ import numpy as np
 from astropy.cosmology import Planck18
 import datetime
 
-# from RotCurves.mcmc_fitter import Prior
 from RotCurves.base_utils import create_r_space
 from RotCurves.rotation_curve import calculate_fraction_at_re
 from RotCurves.mass_model import create_components
