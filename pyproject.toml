@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=61.0", "wheel"]
+requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -8,15 +8,31 @@ version = "0.1.0"
 authors = [
   { name="Amit Nestor Shachar", email="amit.nestorr@gmail.com" },
 ]
-description = "A short description of your package"
+description = "Astronomical package for modeling galaxy rotation curves."
 readme = "README.md"
-requires-python = ">=3.7"
-license = { text = "LICENSE" }
-dependencies = [
-  "numpy",
-  "pandas",
-]
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
 keywords = ["astrophysics", "galaxy", "rotation curve"]
+
+dependencies = [
+  "astropy>=6.1,<7",
+  "corner>=2.2,<3",
+  "emcee>=3.1,<4",
+  "matplotlib>=3.10,<4",
+  "numpy>=2.3,<3",
+  "pandas>=2.3,<3",
+  "parmap>=1.7,<2",
+  "scipy>=1.16,<2",
+]
+
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+]
 
 [project.urls]
 "Homepage" = "https://github.com/nestoramit/RotCurves"
