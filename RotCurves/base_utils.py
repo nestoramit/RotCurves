@@ -1,26 +1,11 @@
 import numpy as np
 from scipy.integrate import quad
 from scipy.optimize import brentq
-import seaborn as sns
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 from matplotlib.ticker import MultipleLocator
 from concurrent.futures import ThreadPoolExecutor
 
-
-colors_list = sns.color_palette('deep', n_colors=10)
-colors = {
-    'blue': colors_list[0],
-    'orange': colors_list[1],
-    'green': colors_list[2],
-    'red': colors_list[3],
-    'purple': colors_list[4],
-    'brown': colors_list[5],
-    'pink': colors_list[6],
-    'grey': colors_list[7],
-    'beige': colors_list[8],
-    'teal': colors_list[9],
-}
 
 def make_pretty_plot(dpi=600):
     """

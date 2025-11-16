@@ -5,15 +5,16 @@ import datetime
 import numpy as np
 import pandas as pd
 import emcee
-import corner
+# import corner
 import parmap
 import matplotlib.pyplot as plt
+# import seaborn
 from matplotlib import patches as mpl_patches
 from multiprocessing import Pool
 from scipy.interpolate import CubicSpline
 from matplotlib.ticker import MultipleLocator
 
-from RotCurves.base_utils import figure, colors
+from RotCurves.base_utils import figure
 from RotCurves.galaxy_model import GalaxyObject
 from RotCurves.rotation_curve import RotationCurveObject, calculate_fraction_at_re
 from RotCurves.mass_model import create_components
@@ -22,6 +23,9 @@ from RotCurves.scaling_relations import log_Mvir_Moster2018
 # Define the logger
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger('RotCurves')
+
+# plotting
+
 
 # MCMC moves
 MCMC_MOVES = {
@@ -75,6 +79,19 @@ class MCMC_fitter:
         self.aurocorrelation_steps_thersh = tau_to_steps_ratio
         self.output_files = output_files
 
+        colors_list = seaborn.color_palette('deep', n_colors=10)
+        self.colors = {
+            'blue': colors_list[0],
+            'orange': colors_list[1],
+            'green': colors_list[2],
+            'red': colors_list[3],
+            'purple': colors_list[4],
+            'brown': colors_list[5],
+            'pink': colors_list[6],
+            'grey': colors_list[7],
+            'beige': colors_list[8],
+            'teal': colors_list[9],
+        }
         if self.galaxy is None:
             raise ValueError("GalaxyObject must be provided to MCMC_fitter.")
 
@@ -922,7 +939,7 @@ class MCMC_fitter:
         x = np.arange(1, self.nsteps_converged + 1)
         for i in range(self.ndim):
             ax = axes[i]
-            ax.plot(x, samples_walkers[:, :, i], alpha=0.5, lw=0.5, color=colors['grey'])
+            ax.plot(x, samples_walkers[:, :, i], alpha=0.5, lw=0.5, color=self.colors['grey'])
             ax.set_xlim(1, self.nsteps_converged)
             ax.xaxis.set_major_locator(MultipleLocator(np.ceil(self.nsteps_converged / 4)))
             ax.xaxis.set_minor_locator(MultipleLocator(max(1, np.ceil(np.ceil(self.nsteps_converged / 4) / 4))))
@@ -940,6 +957,8 @@ class MCMC_fitter:
         plt.close()
 
     def plot_mcmcCornerplot(self, samples_with_f, results_table):
+        import corner
+
         on_switches = [x for x in self.galaxy.switches["parameters"] if self.galaxy.switches["parameters"][x] == 1]
         labels = self._param_labels()
 
@@ -956,7 +975,7 @@ class MCMC_fitter:
                             bins=15, quantiles=(0.16, 0.5, 0.84),
                             smooth=3,
                             show_titles=True, title_kwargs={'fontsize': 14},
-                            truths=true_values, truth_color=colors['pink'], plot_contours=True)
+                            truths=true_values, truth_color=self.colors['pink'], plot_contours=True)
 
         for ax in fig.axes:
             for i, param in enumerate(on_switches):
@@ -966,16 +985,16 @@ class MCMC_fitter:
                     if self.galaxy.priors[param].type == 'gaussian':
                         x = np.linspace(ax.get_xlim()[0], ax.get_xlim()[1], num=100)
                         y = np.exp(self.galaxy.priors[param].lnprob(x)) * (ax.get_ylim()[1] - ax.get_ylim()[0]) * 0.9
-                        ax.plot(x, y, color=colors['pink'], lw=1.5, ls=':')
+                        ax.plot(x, y, color=self.colors['pink'], lw=1.5, ls=':')
                     elif self.galaxy.priors[param].type == 'uniform':
                         y = (ax.get_ylim()[1] - ax.get_ylim()[0]) * 0.2
-                        ax.axhline(y, color=colors['pink'], lw=1.5, ls=':')
+                        ax.axhline(y, color=self.colors['pink'], lw=1.5, ls=':')
 
                     # plot medians
-                    ax.axvline(bestfit_medians[i], color=colors['red'], ls='-', lw=2.5)
+                    ax.axvline(bestfit_medians[i], color=self.colors['red'], ls='-', lw=2.5)
 
                     # plot MAP
-                    ax.axvline(bestfit_maps[i], color=colors['green'], ls='-', lw=2.5)
+                    ax.axvline(bestfit_maps[i], color=self.colors['green'], ls='-', lw=2.5)
 
         if self.output_files:
             filename = "%s-RotCurves_cornerPlot.jpg" % self.galaxy.name
@@ -988,7 +1007,7 @@ class MCMC_fitter:
 
     def plot_single_bestfit(self, rawdata_x, rawdata_y, rawdata_yerr, model_x, model_y, ax_values, ax_res):
         color_data = 'black'
-        color_model = colors['red']
+        color_model = self.colors['red']
 
         # plot data and model
         ax_values.errorbar(x=rawdata_x, y=rawdata_y, yerr=rawdata_yerr,
@@ -1025,7 +1044,7 @@ class MCMC_fitter:
 
         ax_values_twin = ax_values.twiny()
         ax_values_twin.plot(rawdata_x / self.galaxy.kpc_to_arcsec, np.zeros_like(rawdata_x), lw=0.01, ls=':',
-                            color=colors['grey'])
+                            color=self.colors['grey'])
         ax_values_twin.set_xlabel(r'$R$ ["]', fontsize=14)
         ax_values_twin.tick_params(axis='x', labelsize=12)
         if ax_values_twin.get_xlim()[1] > 0.6:
@@ -1107,11 +1126,11 @@ class MCMC_fitter:
                     beam_FWHM_y = beam_FWHM_in_plot_size * y_scale
                     ellipse = mpl_patches.Ellipse(xy=(axes[i].get_xlim()[1] * 0.7, axes[i].get_ylim()[0] * 0.7),
                                                   width=beam_FWHM_x, height=beam_FWHM_y,
-                                                  edgecolor=colors['grey'], fc=colors['grey'], alpha=0.8, lw=0.5)
+                                                  edgecolor=self.colors['grey'], fc=self.colors['grey'], alpha=0.8, lw=0.5)
                     axes[i].add_patch(ellipse)
 
                 # add zero line
-                axes[i].axhline(y=0, ls=':', lw=1., color=colors['grey'])
+                axes[i].axhline(y=0, ls=':', lw=1., color=self.colors['grey'])
 
                 # symmetrize residuals plots
                 yedge = np.max(np.abs(axes[i + ncols].get_ylim()))
@@ -1151,7 +1170,7 @@ class MCMC_fitter:
         if np.sum(RC.V2r) > 0:
             ax.plot(x, RC.Vr, "-.", lw=2, color=green_light, label="$V_{ring}$")
 
-        ax.axhline(y=0, color=colors['grey'], lw=1)
+        ax.axhline(y=0, color=self.colors['grey'], lw=1)
         ax.legend(loc='upper right')
         ax.set_xlabel("R [kpc]")
         ax.set_ylabel("V [km/s]")

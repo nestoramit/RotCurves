@@ -180,7 +180,7 @@ class SurfaceDensityProfile:
         return np.abs(r) / self.r_s
 
     def _calculate_scale_radius_from_effective(self):
-        """
+        r"""
         Infer :math:`r_s` from :math:`r_\mathrm{eff}` by solving the half-mass
         condition in dimensionless form.
 
@@ -202,7 +202,7 @@ class SurfaceDensityProfile:
         return solve_numerical_using_brentq(func, p0=self.r_eff)
 
     def _calculate_effective_radius_from_scale(self):
-        """
+        r"""
         Infer :math:`r_\mathrm{eff}` from :math:`r_s` by solving the half-mass
         condition in dimensionless form.
 
@@ -706,7 +706,7 @@ class DarkMatterHaloProfile:
         # Calculate missing parameters from the given ones
         # parameters: c, r_s, r_vir, scale_density, virial_overdensity
         class _ParameterSolver:
-            """
+            r"""
             Helper class to infer missing halo parameters from any two given values.
 
             Methods map a pair of known parameters to the remaining three using
