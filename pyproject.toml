@@ -3,11 +3,12 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "rotcurves"
+name = "RotCurves"
 version = "0.1.0"
 authors = [
   { name="Amit Nestor Shachar", email="amit.nestorr@gmail.com" },
 ]
+
 description = "Astronomical package for modeling galaxy rotation curves."
 readme = "README.md"
 requires-python = ">=3.10"
