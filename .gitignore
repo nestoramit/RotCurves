@@ -7,3 +7,5 @@ venv/
 docs/build/
 docs/_build/
 __pycache__/
+*.egg*
+# RotCurves.egg-info/
