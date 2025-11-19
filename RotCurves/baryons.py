@@ -114,7 +114,10 @@ class SersicProfile(SurfaceDensityProfile):
 
         # load lookuptables
         self.lookup = lookup
-        self.vcirc_lookup_table = self._vcirc_lookup_table()
+        self.vcirc_lookup_table = None
+        
+        if self.lookup and self._is_massive:
+            self.vcirc_lookup_table = self._vcirc_lookup_table()
 
     def surface_density_function(self, x):
         r"""
@@ -317,7 +320,10 @@ class SersicProfile(SurfaceDensityProfile):
         Noordermeer, E., et al. 2008, MNRAS, 385, 1359
         """
         if self.lookup:
-            interpolator = CubicSpline(x=self.vcirc_lookup_table[:, 0], y=self.vcirc_lookup_table[:, 1])
+            interpolator = CubicSpline(
+                x=self.vcirc_lookup_table[:, 0], 
+                y=self.vcirc_lookup_table[:, 1]
+            )
 
             # TODO: the talbes are in x=r/reff, change to x=r/rs
             v2 = interpolator(x * self.r_s / self.r_eff)
@@ -472,7 +478,7 @@ class FreemanDisk(SurfaceDensityProfile):
         float
             Effective radius :math:`r_\mathrm{eff}` [kpc].
         """
-        return self.r_s * 1.678
+        return self.r_s * 1.678347
 
     def _calculate_scale_radius_from_effective(self):
         r"""
@@ -489,7 +495,7 @@ class FreemanDisk(SurfaceDensityProfile):
         float
             Scale radius :math:`r_s` [kpc].
         """
-        return self.r_eff / 1.678
+        return self.r_eff / 1.678347
 
     def _scale_density(self):
         r"""

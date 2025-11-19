@@ -451,8 +451,11 @@ class SurfaceDensityProfile:
         ndarray or float
             :math:`v_c^2(r)` [:math:`\mathrm{km}^2 \, \mathrm{s}^{-2}`].
         """
-        x = self._normalized_radius(r)
-        return self.vcirc2_dimless(x) * self.scale_velocity**2
+        if not self._is_massive:
+            return np.zeros_like(r)
+        else:
+            x = self._normalized_radius(r)
+            return self.vcirc2_dimless(x) * self.scale_velocity**2
 
     def vcirc_dimless(self, x):
         r"""
@@ -492,8 +495,11 @@ class SurfaceDensityProfile:
         ndarray or float
             Circular velocity [:math:`\mathrm{km} \, \mathrm{s}^{-1}`].
         """
-        x = self._normalized_radius(r)
-        return self.vcirc_dimless(x) * self.scale_velocity
+        if not self._is_massive:
+            return np.zeros_like(r)
+        else:
+            x = self._normalized_radius(r)
+            return self.vcirc_dimless(x) * self.scale_velocity
 
     def light_profile(self, r, r2=None):
         r"""
@@ -842,6 +848,17 @@ class DarkMatterHaloProfile:
         """Return the dimensionless radius :math:`x = |r|/r_s`."""
         return np.abs(r) / self.r_s
 
+    def _is_massive(self):
+        """
+        Return whether the component carries positive mass.
+
+        Returns
+        -------
+        bool
+            True if ``mass > 0``.
+        """
+        return self.mass > 0.
+    
     def _scale_mass(self):
         r"""
         Compute the mass scaling factor :math:`M_s`.
@@ -978,8 +995,11 @@ class DarkMatterHaloProfile:
         ndarray or float
             :math:`v_c^2(r)` [:math:`\mathrm{km}^2\,\mathrm{s}^{-2}`].
         """
-        x = self._normalized_radius(r)
-        return self._vcirc2_dimless(x) * self.scale_velocity ** 2
+        if not self._is_massive:
+            return np.zeros_like(r)
+        else:
+            x = self._normalized_radius(r)
+            return self._vcirc2_dimless(x) * self.scale_velocity ** 2
 
     def _vcirc_dimless(self, x):
         r"""
@@ -1011,5 +1031,8 @@ class DarkMatterHaloProfile:
         ndarray or float
             Circular velocity [:math:`\mathrm{km}\,\mathrm{s}^{-1}`].
         """
-        x = self._normalized_radius(r)
-        return self._vcirc_dimless(x) * self.scale_velocity
+        if not self._is_massive:
+            return np.zeros_like(r)
+        else:
+            x = self._normalized_radius(r)
+            return self._vcirc_dimless(x) * self.scale_velocity
