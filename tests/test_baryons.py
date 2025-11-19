@@ -1,43 +1,56 @@
 import numpy as np
+from numpy.testing import assert_allclose
 from RotCurves.baryons import SersicProfile, FreemanDisk
 
 
-def test_freeman_sersic():
-    r"""
-    Test that a FreemanDisk and SersicProfile with n=1 are equivalent.
-
-    This function verifies that an exponential disk (:class:`FreemanDisk`) and
-    a Sérsic profile with :math:`n=1` (:class:`SersicProfile`) produce identical
-    results for surface density, enclosed mass, and circular velocity.
-
-    The test uses a mass of :math:`10^{11} M_\odot` and an effective radius of
-    5 kpc, comparing the profiles at 100 radii from 0 to 20 kpc.
-
-    Raises
-    ------
-    AssertionError
-        If the profiles differ by more than the specified tolerance.
-
-    Notes
-    -----
-    The exponential disk is mathematically equivalent to a Sérsic profile with
-    :math:`n=1`, so this test serves as a consistency check between the two
-    implementations.
+def test_freeman_sersic_equivalence():
+    """Test that FreemanDisk and SersicProfile with n=1 produce identical results.
+    
+    An exponential disk is mathematically equivalent to a Sérsic profile with n=1.
+    This test verifies that both implementations produce the same surface density,
+    enclosed mass, and circular velocity profiles.
     """
-    M = 1e11
-    Reff = 5.
+    
+    mass = 1e11  # M_sun
+    r_eff = 5.0  # kpc
     n = 1.0
-    q0 = 0
-
-    r = np.linspace(0, 20, num=100)
-    sersic = SersicProfile(mass=M, r_eff=Reff, n=n, q0=q0)
-    freeman = FreemanDisk(mass=M, r_eff=Reff)
-
+    q0 = 0.0
+    radii = np.linspace(0, 20, num=100)  # kpc
     rtol = 1e-3
-    atol = 0.
-
-    assert np.allclose(sersic.surface_density(r), freeman.surface_density(r), rtol=rtol, atol=atol, equal_nan=True)
-    assert np.allclose(sersic.menc(r), freeman.menc(r), rtol=rtol, atol=atol, equal_nan=True)
-    assert np.allclose(sersic.vcirc(r), freeman.vcirc(r), rtol=rtol, atol=atol, equal_nan=True)
-
-    print("Freeman and Sersic n=1 profiles are equal within the tolerance limits.")
+    atol = 0.0
+    
+    sersic = SersicProfile(mass=mass, r_eff=r_eff, n=n, q0=q0)
+    freeman = FreemanDisk(mass=mass, r_eff=r_eff)
+    
+    sersic_surface_density = sersic.surface_density(radii)
+    freeman_surface_density = freeman.surface_density(radii)
+    assert_allclose(
+        sersic_surface_density, 
+        freeman_surface_density, 
+        rtol=rtol, 
+        atol=atol, 
+        equal_nan=True,
+        err_msg="Surface density profiles differ"
+    )
+    
+    sersic_menc = sersic.menc(radii)
+    freeman_menc = freeman.menc(radii)
+    assert_allclose(
+        sersic_menc, 
+        freeman_menc, 
+        rtol=rtol, 
+        atol=atol, 
+        equal_nan=True,
+        err_msg="Enclosed mass profiles differ"
+    )
+    
+    sersic_vcirc = sersic.vcirc(radii)
+    freeman_vcirc = freeman.vcirc(radii)
+    assert_allclose(
+        sersic_vcirc, 
+        freeman_vcirc, 
+        rtol=rtol, 
+        atol=atol, 
+        equal_nan=True,
+        err_msg="Circular velocity profiles differ"
+    )

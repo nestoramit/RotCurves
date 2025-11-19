@@ -1208,32 +1208,3 @@ class LightFreemanDiskProfile(FreemanDisk):
         # Call the parent class constructor
         mass = 0.
         super().__init__(mass=mass, r_eff=r_eff, r_s=r_s)
-
-if __name__ == '__main__':
-    test = LightFreemanDiskProfile(r_s=5)
-    a = 0
-    # M = 1e10
-    # Rpeak = 5.
-    # h = 1.
-    # kpc = c.kpc.to(u.m).value
-    # M_solar = c.M_sun.to(u.kg).value  # kg
-    # G = c.G.to(u.m ** 3 / u.kg / u.s ** 2).value  # m^3 kg^-1 s^-2
-    #
-    # r = np.linspace(0, 10*Rpeak, num=100)
-    #
-    # freeman = FreemanDisk(mass=M, r_s=Rpeak)
-    # ring_new = GaussianRingProfile(mass=M, r_s=Rpeak, h=h, lookup=False)
-    # ring_old = GaussianRingObject(mass=M, rpeak=Rpeak, ring_FWHM=Rpeak/h, use_lookuptable=True)
-    # ring_old.get_profiles(r)
-    # ring_old.get_RC(r)
-    #
-    # fig, axes = plt.subplots(ncols=3, figsize=(10, 3))
-    # axes[0].plot(r, ring_new.surface_density(r), label="Surface Density")
-    # axes[0].plot(r, ring_old.density_profile, ls='--', label="Surface Density old")
-    # axes[1].plot(r, ring_new.menc(r), label="Enclosed Mass")
-    # axes[1].plot(r, ring_old.mass_profile*ring_old.mass/ring_old.M0, ls='--', label="Enclosed Mass old")
-    # axes[2].plot(r, ring_new.vcirc(r), label="Circular Velocity")
-    # axes[2].plot(r, ring_old.V/np.sqrt(G)*1e-3, ls='--', label="Circular Velocity old")
-    # axes[2].plot(r, freeman.vcirc(r), ls='-.', label="Freeman Disk")
-    # plt.legend()
-    # plt.show()
