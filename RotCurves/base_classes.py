@@ -1,5 +1,4 @@
 import numpy as np
-from astropy.cosmology import Planck18
 from scipy.special import j0, j1
 import warnings
 import logging
@@ -9,7 +8,8 @@ from RotCurves.base_utils import (
     solve_numerical_using_brentq,
 )
 from RotCurves.const import (
-    G_CONST
+    G_CONST,
+    COSMOLOGY
 )
 
 
@@ -703,7 +703,7 @@ class DarkMatterHaloProfile:
             self.z = 0
 
         # Set the critical density of the Universe at redshift z
-        self.rho_crit = Planck18.critical_density(self.z).to('Msun / kpc3').value
+        self.rho_crit = COSMOLOGY.critical_density(self.z).to('Msun / kpc3').value
 
         # Set the default density function to NFW if not provided (e.g., Navarro+1995)
         if density_function is None:
