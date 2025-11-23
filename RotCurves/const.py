@@ -1,11 +1,18 @@
 import numpy as np
+import astropy.units as u
+from astropy.cosmology import FlatLambdaCDM
 import os
 
 # DIR paths
 LOOKUP_TABLES_PATH = os.path.dirname(os.path.abspath(__file__)) + "/lookup_tables"
 
-# constants
+# constants and cosmology
 G_CONST = 4.30091e-6  # kpc (km/s)^2 Msun^-1
+COSMOLOGY = FlatLambdaCDM(
+    H0=70,
+    Om0=0.3,
+    Tcmb0=2.7255,
+)
 
 # lookup tables
 def load_noor_lookuptable():
