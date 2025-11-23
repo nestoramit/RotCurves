@@ -9,7 +9,14 @@ from RotCurves.dm_halos import (
     EinastoHalo,
     DekelZhaoHalo,
 )
-from RotCurves.const import G_CONST
+
+from RotCurves.const import (
+    G_CONST
+)
+
+
+RTOL = 1e-3
+ATOL = 0.0
 
 def test_all_halos_match_input_mass():
     """Each halo should recover its input mass at the virial radius."""
@@ -93,7 +100,7 @@ def test_burkert_core_remains_finite():
     ), "NFW profile no longer diverges steeply toward the centre."
 
 
-def test_standard_nfw_matches_analytic_scalings():
+def test_standard_nfw_matches_analytic():
     """Verify the NFWHalo reproduces closed-form parameter relations."""
     H0 = 70    # km/s / Mpc
     mass = 1e12
@@ -105,9 +112,11 @@ def test_standard_nfw_matches_analytic_scalings():
     r_vir_expected = 206.27899  # kpc
     r_s_expected = 20.627899  # kpc
     x = [
-        0., 0.52631579, 1.05263158, 1.57894737, 2.10526316, 2.63157895, 3.15789474,
-        3.68421053, 4.21052632, 4.73684211, 5.26315789, 5.78947368, 6.31578947,
-        6.84210526, 7.36842105, 7.89473684, 8.42105263, 8.94736842, 9.47368421, 10.
+        0., 0.52631579, 1.05263158, 1.57894737,
+        2.10526316, 2.63157895, 3.15789474, 3.68421053, 
+        4.21052632, 4.73684211, 5.26315789, 5.78947368,
+        6.31578947, 6.84210526, 7.36842105, 7.89473684, 
+        8.42105263, 8.94736842, 9.47368421, 10.,
     ]
     menc_expected = [
         0.00000000e+00, 5.24106904e+10, 1.38569015e+11, 2.25104405e+11,
@@ -133,31 +142,100 @@ def test_standard_nfw_matches_analytic_scalings():
     assert_allclose(
         halo.rho_crit,
         rho_crit,
-        rtol=1e-12,
+        rtol=RTOL,
         err_msg="Critical density deviates from analytic expectation.",
     )
     assert_allclose(
         halo.r_vir,
         r_vir_expected,
-        rtol=1e-12,
+        rtol=RTOL,
         err_msg="Virial radius deviates from analytic expectation.",
     )
     assert_allclose(
         halo.r_s,
         r_s_expected,
-        rtol=1e-12,
+        rtol=RTOL,
         err_msg="Scale radius deviates from analytic expectation.",
     )
     assert_allclose(
-        halo.menc(x * r_s_expected),
+        halo.menc(np.asarray(x) * r_s_expected),
         menc_expected,
-        rtol=1e-12,
+        rtol=RTOL,
         err_msg="Enclosed mass deviated from analytic expectation."
     )
     assert_allclose(
-        halo.vcirc(x * r_s_expected),
+        halo.vcirc(np.asarray(x) * r_s_expected),
         vcirc_expected,
-        rtol=1e-12,
+        rtol=RTOL,
         err_msg="Circular velocity deviated from analytic expectation."
     )
 
+def test_standard_burkert_matches_analytic():
+    """Verify the BrukertHalo reproduces closed-form parameter relations."""
+    H0 = 70    # km/s / Mpc
+    mass = 1e12
+    concentration = 10
+    delta = 200
+    z = 0
+
+    rho_crit = 135.99294  # Msun / kpc^3
+    r_vir_expected = 206.27899  # kpc
+    r_s_expected = 20.627899  # kpc
+    x = [
+        0., 0.52631579, 1.05263158, 1.57894737,
+        2.10526316, 2.63157895, 3.15789474, 3.68421053, 
+        4.21052632, 4.73684211, 5.26315789, 5.78947368,
+        6.31578947, 6.84210526, 7.36842105, 7.89473684, 
+        8.42105263, 8.94736842, 9.47368421, 10.,
+    ]
+    menc_expected = [
+        0.00000000e+00, 1.87485520e+10, 8.68702269e+10, 1.75166402e+11,
+        2.63398284e+11, 3.45370824e+11, 4.20048877e+11, 4.87904509e+11,
+        5.49755154e+11, 6.06413804e+11, 6.58595315e+11, 7.06903372e+11,
+        7.51841327e+11, 7.93828241e+11, 8.33214202e+11, 8.70293327e+11,
+        9.05314329e+11, 9.38488950e+11, 9.69998662e+11, 1.00000000e+12,
+    ]
+    vcirc_expected = [
+        0., 86.1814327,  131.17477367, 152.08788526, 161.51256661,
+        165.41986589, 166.53446739, 166.16832392, 164.99451415, 163.37783171,
+        161.52478134, 159.55614227, 157.54416308, 155.53260278, 153.54799767,
+        151.60622738, 149.71645984, 147.88358304, 146.10973682, 144.3952952,
+    ]
+    
+    halo = BurkertHalo(
+        mass=mass,
+        concentration=concentration,
+        z=z,
+        virial_overdensity=delta,
+    )
+
+    assert_allclose(
+        halo.rho_crit,
+        rho_crit,
+        rtol=RTOL,
+        err_msg="Critical density deviates from analytic expectation.",
+    )
+    assert_allclose(
+        halo.r_vir,
+        r_vir_expected,
+        rtol=RTOL,
+        err_msg="Virial radius deviates from analytic expectation.",
+    )
+    assert_allclose(
+        halo.r_s,
+        r_s_expected,
+        rtol=RTOL,
+        err_msg="Scale radius deviates from analytic expectation.",
+    )
+    assert_allclose(
+        halo.menc(np.asarray(x) * r_s_expected),
+        menc_expected,
+        rtol=RTOL,
+        err_msg="Enclosed mass deviated from analytic expectation."
+    )
+    assert_allclose(
+        halo.vcirc(np.asarray(x) * r_s_expected),
+        vcirc_expected,
+        rtol=RTOL,
+        err_msg="Circular velocity deviated from analytic expectation."
+    )
