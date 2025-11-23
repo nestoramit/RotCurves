@@ -4,6 +4,7 @@ from astropy.cosmology import FlatLambdaCDM
 import os
 
 # DIR paths
+ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 LOOKUP_TABLES_PATH = os.path.dirname(os.path.abspath(__file__)) + "/lookup_tables"
 
 # constants and cosmology
