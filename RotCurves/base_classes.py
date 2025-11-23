@@ -236,7 +236,7 @@ class SurfaceDensityProfile:
         float
             Surface density normalization :math:`\Sigma_0` [:math:`M_\odot \, kpc^{-2}`].
         """
-        return self.mass / (2 * np.pi * self.r_s ** 2 * self.menc_dimless(np.inf))[0]
+        return self.mass / (2 * np.pi * self.r_s ** 2 * self.menc_dimless(np.inf)).item()
 
     def _scale_intensity(self):
         r"""
@@ -451,7 +451,7 @@ class SurfaceDensityProfile:
         ndarray or float
             :math:`v_c^2(r)` [:math:`\mathrm{km}^2 \, \mathrm{s}^{-2}`].
         """
-        if not self._is_massive:
+        if not self._is_massive():
             return np.zeros_like(r)
         else:
             x = self._normalized_radius(r)
@@ -495,7 +495,7 @@ class SurfaceDensityProfile:
         ndarray or float
             Circular velocity [:math:`\mathrm{km} \, \mathrm{s}^{-1}`].
         """
-        if not self._is_massive:
+        if not self._is_massive():
             return np.zeros_like(r)
         else:
             x = self._normalized_radius(r)
@@ -995,7 +995,7 @@ class DarkMatterHaloProfile:
         ndarray or float
             :math:`v_c^2(r)` [:math:`\mathrm{km}^2\,\mathrm{s}^{-2}`].
         """
-        if not self._is_massive:
+        if not self._is_massive():
             return np.zeros_like(r)
         else:
             x = self._normalized_radius(r)
@@ -1031,7 +1031,7 @@ class DarkMatterHaloProfile:
         ndarray or float
             Circular velocity [:math:`\mathrm{km}\,\mathrm{s}^{-1}`].
         """
-        if not self._is_massive:
+        if not self._is_massive():
             return np.zeros_like(r)
         else:
             x = self._normalized_radius(r)
