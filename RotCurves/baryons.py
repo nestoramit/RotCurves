@@ -114,10 +114,10 @@ class SersicProfile(SurfaceDensityProfile):
 
         # load lookuptables
         self.lookup = lookup
-        self.vcirc_lookup_table = None
-        
-        if self.lookup and self._is_massive:
-            self.vcirc_lookup_table = self._vcirc_lookup_table()
+        # self.vcirc_lookup_table = None
+        if self.lookup:
+            self._lookup_table_values()
+        #     self.vcirc_lookup_table = self._vcirc_lookup_table()
 
     def surface_density_function(self, x):
         r"""
@@ -265,6 +265,26 @@ class SersicProfile(SurfaceDensityProfile):
         """
         return gammainc(2 * self.n, x ** (1 / self.n)) * gamma(2 * self.n)
 
+    def _lookup_table_values(self):
+        self.n_table = self._n_table()
+        self.q0_table = self._q0_table()
+
+    def _n_table(self):
+        n_list = np.asarray(sorted(set([x[0] for x in NoordermeerLookupTables.keys()])))
+        n_table = n_list[np.argmin(np.abs(n_list - self.n))]
+        if np.abs(self.n - n_table) > 1e-2:
+            logger.warning(
+                f"SersicProfile index n: using lookup tables, taking %2.2f instead of %2.2f" % (n_table, self.n))
+        return n_table
+
+    def _q0_table(self):
+        q0_list = np.asarray(sorted(set([x[1] for x in NoordermeerLookupTables.keys()])))
+        q0_table = q0_list[np.argmin(np.abs(q0_list - self.q0))]
+        if np.abs(self.q0 - q0_table) > 1e-2:
+            logger.warning(
+                f"SersicProfile q0: using lookup tables, taking %2.2f instead of %2.2f" % (q0_table, self.q0))
+        return q0_table
+
     def _vcirc_lookup_table(self):
         r"""
         Load the lookup table for dimensionless circular velocity squared.
@@ -281,14 +301,14 @@ class SersicProfile(SurfaceDensityProfile):
             dimensionless radii and the second column contains dimensionless
             squared circular velocities.
         """
-        q0_list = NoordermeerLookupTables['q_list']
-        if self.q0 in q0_list:
-            closest_q0 = self.q0
-        else:
-            closest_q0 = q0_list[np.argmin(np.abs(q0_list - self.q0))]
-            logger.warning('Sersic disk q: non-exact value, using %2.3f instead of %2.3f' % (closest_q0, self.q0))
+        # q0_list = NoordermeerLookupTables['q_list']
+        # if self.q0 in q0_list:
+        #     closest_q0 = self.q0
+        # else:
+        #     closest_q0 = q0_list[np.argmin(np.abs(q0_list - self.q0))]
+        #     logger.warning('Sersic disk q: non-exact value, using %2.3f instead of %2.3f' % (closest_q0, self.q0))
 
-        return NoordermeerLookupTables[self.n][closest_q0]
+        return NoordermeerLookupTables[self.n_table, self.q0_table]
 
     def vcirc2_dimless(self, x):
         r"""
@@ -320,9 +340,10 @@ class SersicProfile(SurfaceDensityProfile):
         Noordermeer, E., et al. 2008, MNRAS, 385, 1359
         """
         if self.lookup:
+            vcirc_lookup_table = self._vcirc_lookup_table()
             interpolator = CubicSpline(
-                x=self.vcirc_lookup_table[:, 0], 
-                y=self.vcirc_lookup_table[:, 1]
+                x=vcirc_lookup_table[:, 0],
+                y=vcirc_lookup_table[:, 1]
             )
 
             # TODO: the talbes are in x=r/reff, change to x=r/rs

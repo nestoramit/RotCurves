@@ -16,22 +16,43 @@ COSMOLOGY = FlatLambdaCDM(
 )
 
 # lookup tables
-def load_noor_lookuptable():
-    dir_path = LOOKUP_TABLES_PATH+'/Noordermeer_lookup_tables'
+def load_noor_lookuptables():
+    dir = LOOKUP_TABLES_PATH+'/Noordermeer_lookup_tables'
 
     tables = {}
-    q_list = np.asarray(list(set([float(x[x.find('_q') + 2:x.find('.npy')]) for x in os.listdir(dir_path) if x.find('npy') > 0])))
-    n_list = np.asarray(list(set([float(x[x.find('_n') + 2:x.find('_q')]) for x in os.listdir(dir_path) if x.find('npy') > 0])))
-    tables['q_list'] = q_list
-    tables['n_list'] = n_list
+    # q_list = np.asarray(
+    #     list(set(
+    #         [float(x[x.find('_q')+2:x.find('.npy')])
+    #          for x in os.listdir(dir_path)
+    #          if x.find('npy') > 0
+    #          ]
+    #     )))
+    # n_list = np.asarray(
+    #     list(set(
+    #         [float(x[x.find('_n')+2:x.find('_q')])
+    #          for x in os.listdir(dir_path)
+    #          if x.find('npy') > 0
+    #          ]
+    #     )))
+    for file in os.listdir(dir):
+        if file.find(".npy") > 0:
+            n = float(file[file.find('_n')+2:file.find('_q')])
+            q0 = float(file[file.find('_q')+2:file.find('.npy')])
+            tables[n, q0] = np.load(
+                os.path.join(
+                    dir,
+                    file
+                )
+            )
 
-    for n in n_list:
-        tables[n] = {}
-        for q in q_list:
-            try:
-                tables[n][q] = np.load(os.path.join(dir_path, f"noor_n{n:2.2f}_q{q:2.2f}.npy"))
-            except:
-                pass
+    # for n in n_list:
+    #     tables[n] = {}
+    #     for q in q_list:
+    #         try:
+    #             tables[n][q] = np.load(os.path.join(dir_path, f"noor_n{n:2.2f}_q{q:2.2f}.npy"))
+    #         except:
+    #             pass
+
     return tables
 
 def load_gaussian_tables():
@@ -52,7 +73,7 @@ def load_gaussian_tables():
 
     return tables, BT_tables
 
-NoordermeerLookupTables = load_noor_lookuptable()
+NoordermeerLookupTables = load_noor_lookuptables()
 GaussianRingLookupTables, GaussianRingBTminLookupTables = load_gaussian_tables()
 
 

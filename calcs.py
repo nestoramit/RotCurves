@@ -1,9 +1,6 @@
-from scipy.special import gammaincinv
+import numpy as np
+from tests.test_baryons import test_freeman_sersic_equivalence
 
 
 if __name__ == '__main__':
-    reff = 2.
-    n = 1.
-    b = lambda n: gammaincinv(2*n, 0.5)
-    for n in [1., 2., 3., 4.]:
-        print(b(n))
+    test_freeman_sersic_equivalence()
