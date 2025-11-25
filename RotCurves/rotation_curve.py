@@ -1,5 +1,6 @@
 import numpy as np
 import time
+import logging
 from scipy.ndimage import rotate
 from scipy.ndimage import gaussian_filter1d
 from scipy.interpolate import CubicSpline
@@ -9,8 +10,184 @@ from RotCurves.baryons import *
 from RotCurves.dm_halos import *
 from RotCurves.base_utils import create_r_space
 
+# Define the logger
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger('RotCurves')
+
 
 class RotationCurveObject:
+    r"""
+    Rotation curve calculator with beam smearing and pressure support corrections.
+
+    This class computes rotation curves for galaxy models composed of baryonic
+    components (disk, bulge, and/or ring) and a dark matter halo. It accounts for
+    observational effects including beam smearing, inclination, and pressure support corrections.
+
+    The rotation curve is computed as:
+
+    .. math::
+
+       v_{\rm rot}^2(r) = v_{\rm circ}^2(r) + v_{\sigma}^2(r),
+
+    where :math:`v_{\rm circ}^2 = v_{\rm baryon}^2 + v_{\rm halo}^2` is the
+    circular velocity squared, and :math:`v_{\sigma}^2` is the pressure support
+    correction. The observed line-of-sight velocity is convolved over the PSF beam kernel:
+
+    .. math::
+
+       v_{\rm obs}(r) = v_{\rm rot}(r) \sin(i) \otimes PSF(r),
+
+    where :math:`i` is the inclination angle and :math:`PSF` a circular
+    Gaussian PSF beam kernel.
+
+    The pressure support correction accounts fact that gas velocity
+    dispersion (in most cases) reduces the observed rotation velocity below the circular
+    velocity (Burkert et al. 2010):
+
+    .. math::
+
+       v_{\sigma}^2 = 2 \sigma^2 \sum_{i} \frac{\mathrm{d}\ln\Sigma_i}{\mathrm{d}\ln r},
+    
+
+    where :math:`\sigma` is the velocity dispersion and the logarithmic slope
+    is computed from the sum of the disk and ring components surface densities.
+
+    Parameters
+    ----------
+    galaxy : object, optional
+        Galaxy object containing spatial grid parameters (``dx``, ``edge``,
+        ``oversample``, ``oversample_edge``, ``sigma_inst``). If provided,
+        these parameters override individual arguments.
+    edge : float, optional
+        Maximum radius for the rotation curve calculation [kpc]. Required if
+        ``galaxy`` and ``rarray`` are not provided.
+    dx : float, optional
+        Spatial resolution (pixel size) [kpc]. Default is 0.1 kpc if not
+        specified.
+    rarray : array_like, optional
+        Custom radial array for evaluation [kpc]. If provided, ``edge`` and
+        ``dx`` are inferred from this array.
+    sigma_inst : float, optional
+        Instrumental velocity dispersion [km/s]. Default is 0.
+    oversample : float, optional
+        Oversampling factor for spatial resolution. The effective pixel size
+        becomes ``dx / oversample``. Default is 1.
+    oversample_edge : float, optional
+        Number of beam widths to extend the sampling region beyond ``edge``
+        for beam smearing calculations. Default is 4.
+    Halo : object, optional
+        Dark matter halo profile instance (e.g., :class:`NFWHalo`).
+    Disk : object, optional
+        Disk baryonic component (e.g., :class:`FreemanDisk` or
+        :class:`SersicProfile`).
+    Ring : object, optional
+        Ring baryonic component (e.g., :class:`GaussianRingProfile`).
+    Bulge : object, optional
+        Bulge baryonic component (e.g., :class:`SersicProfile` with :math:`n=4`).
+    sigma_dispersion : float, optional
+        Central velocity dispersion for pressure support calculation [km/s].
+        Default is ``None`` (no pressure support).
+    dispersion_function : str, optional
+        Functional form for the velocity dispersion profile. Options:
+        - ``'const'`` or ``'constant'``: Constant dispersion
+        - ``'constant_h'`` or ``'constant_height'``: Dispersion proportional to
+          square root of surface density
+        - ``'power_law'``: Power-law radial dependence
+        Default is ``'const'``.
+    pressure_support : str, optional
+        Method for calculating pressure support correction. Options:
+        - ``'general'`` or ``'burkert'``: General formula using logarithmic
+          density slope (Burkert et al. 2010)
+        - ``'exponential'``: Simplified formula for exponential profiles
+        Default is ``'general'``.
+    inclination : float, optional
+        Inclination angle of the galaxy [degrees]. :math:`i=90^\circ` is
+        edge-on, :math:`i=0^\circ` is face-on. Default is 90.
+    PA : float, optional
+        Position angle of the major axis [degrees]. Used for 2D rotation
+        curve calculations. Default is 0.
+    sigma_beam : float, optional
+        Standard deviation of the Gaussian beam [kpc]. If not provided but
+        ``FWHM_beam`` is given, it is calculated as
+        :math:`\sigma_{\rm beam} = \mathrm{FWHM} / (2\sqrt{2\ln 2})`.
+    FWHM_beam : float, optional
+        Full Width at Half Maximum of the Gaussian beam [kpc]. If provided,
+        ``sigma_beam`` is calculated automatically.
+    apply_2D : bool, optional
+        If ``True``, compute 2D beam smearing on a spatial grid. If ``False``,
+        use 1D beam smearing along the major axis. Default is ``True``.
+    include_beam_smearing : bool, optional
+        If ``True``, apply beam smearing to the rotation curve. If ``False``,
+        only compute the intrinsic (unsmeared) rotation curve. Default is
+        ``True``.
+    printtime : bool, optional
+        If ``True``, print computation time. Default is ``False``.
+    ndim : float, optional
+        Output dimensionality. ``1`` for 1D major-axis extraction,
+        ``2`` for full 2D velocity field. Default is 1.
+    radial_velocity : float, optional
+        Radial velocity component (inflow/outflow) [km/s]. Default is 0.
+
+    Attributes
+    ----------
+    R_majoraxis : ndarray
+        Radial array along the major axis [kpc].
+    intrinsic : ndarray
+        Intrinsic rotation velocity including pressure support [km/s].
+    intrinsic_with_inclination : ndarray
+        Intrinsic line-of-sight velocity [km/s].
+    intrinsic_no_dispersion : ndarray
+        Intrinsic rotation velocity without pressure support [km/s].
+    intrinsic_no_dispersion_with_inclination : ndarray
+        Intrinsic line-of-sight velocity without pressure support [km/s].
+    smeared : ndarray
+        Beam-smeared rotation velocity [km/s].
+    smeared_with_inclination : ndarray
+        Beam-smeared line-of-sight velocity [km/s].
+    velocity_dispersion : ndarray
+        Total velocity dispersion including beam smearing and instrumental
+        effects [km/s].
+    V2baryon : ndarray
+        Squared velocity contribution from baryonic components [km²/s²].
+    V2h : ndarray
+        Squared velocity contribution from dark matter halo [km²/s²].
+    V2circ : ndarray
+        Squared circular velocity [km²/s²].
+    V2rot : ndarray
+        Squared rotation velocity including pressure support [km²/s²].
+    fdm : ndarray
+        Dark matter fraction :math:`f_{\rm DM} = v_{\rm halo}^2 / v_{\rm circ}^2`.
+
+    Notes
+    -----
+    
+
+    where :math:`\sigma` is the velocity dispersion and the logarithmic slope
+    is computed from the density profile.
+
+    Beam smearing is implemented using a Gaussian convolution kernel that
+    accounts for the finite spatial resolution of observations. The kernel
+    is light-weighted using the combined light profiles of all baryonic
+    components.
+
+    References
+    ----------
+    Burkert, A., et al. 2010, ApJ, 725, 2324
+
+    Examples
+    --------
+    Create a rotation curve for a galaxy with an exponential disk and NFW halo:
+
+    >>> from RotCurves.baryons import FreemanDisk
+    >>> from RotCurves.dm_halos import NFWHalo
+    >>> disk = FreemanDisk(mass=1e10, r_s=2.0)
+    >>> halo = NFWHalo(mass=1e12, concentration=10)
+    >>> rc = RotationCurveObject(
+    ...     edge=20.0, dx=0.1, Disk=disk, Halo=halo,
+    ...     inclination=60, sigma_beam=0.5, include_beam_smearing=True
+    ... )
+    >>> v_obs = rc.smeared_with_inclination  # Line-of-sight velocity
+    """
     def __init__(self, galaxy=None, edge=None, dx=None, rarray=None, sigma_inst=0.,
                  oversample=1., oversample_edge=4.,
                  Halo=None, Disk=None, Ring=None, Bulge=None, sigma_dispersion=None,
@@ -186,8 +363,39 @@ class RotationCurveObject:
                 if printtime:
                     print('time for 2D:', np. round(time.time() - self.starttime, 1))
 
-    ### get intrinsic dispersion profile
     def get_dispersion_profile(self, R_array, functional_form='const'):
+        r"""
+        Calculate the velocity dispersion profile.
+
+        Computes the radial profile of velocity dispersion :math:`\sigma(r)`
+        based on the specified functional form. The dispersion is used to
+        calculate pressure support corrections to the rotation curve.
+
+        Parameters
+        ----------
+        R_array : array_like
+            Radial array [kpc] at which to evaluate the dispersion profile.
+        functional_form : str, optional
+            Functional form for the dispersion profile. Options:
+            - ``'const'``, ``'constant'``, or ``'flat'``: Constant dispersion
+              :math:`\sigma(r) = \sigma_0`
+            - ``'constant_h'``, ``'constant_height'``, or ``'const_h'``:
+              Dispersion proportional to square root of surface density:
+              :math:`\sigma(r) = \sigma_0 \sqrt{\Sigma(r) / \Sigma_0}`
+            - ``'power_law'``: Power-law radial dependence:
+              :math:`\sigma(r) = \sigma_0 / (1 + r / r_d)`
+            Default is ``'const'``.
+
+        Notes
+        -----
+        The dispersion profile is stored in ``self.sigma_profile``. The
+        ``constant_h`` form assumes that the velocity dispersion scales with
+        the square root of the surface density, which is appropriate for
+        constant scale height disks.
+
+        The ``power_law`` form is only available when a disk component is
+        present, as it uses the disk scale radius :math:`r_d`.
+        """
         if functional_form in ['const', 'constant', 'flat']:
             self.dispersion_func = lambda r: 1.
         elif functional_form in ['constant_h', 'constant_height', 'const_h']:
@@ -202,6 +410,54 @@ class RotationCurveObject:
         self.sigma_profile = self.sigma0 * self.dispersion_func(R_array)
 
     def make_intrinsic_rotationCurve(self, R_array):
+        r"""
+        Calculate the intrinsic (unsmeared) rotation curve.
+
+        Computes the rotation curve from all mass components (disk, ring, bulge,
+        halo) and applies pressure support corrections. The method calculates:
+
+        1. Individual velocity contributions from each component
+        2. Combined baryonic and dark matter circular velocities
+        3. Pressure support correction from gas velocity dispersion
+        4. Final rotation velocity including all corrections
+
+        Parameters
+        ----------
+        R_array : array_like
+            Radial array [kpc] at which to evaluate the rotation curve.
+
+        Notes
+        -----
+        The method computes several velocity components:
+
+        - **Baryonic velocity**: :math:`v_{\rm baryon}^2 = v_{\rm disk}^2 +
+          v_{\rm bulge}^2 + v_{\rm ring}^2`
+        - **Circular velocity**: :math:`v_{\rm circ}^2 = v_{\rm baryon}^2 +
+          v_{\rm halo}^2`
+        - **Pressure support**: For the general (Burkert) method:
+          :math:`v_{\sigma}^2 = 2\sigma^2 (\mathrm{d}\ln\Sigma / \mathrm{d}\ln r)`
+        - **Rotation velocity**: :math:`v_{\rm rot}^2 = v_{\rm circ}^2 +
+          v_{\sigma}^2`
+
+        The pressure support correction uses the logarithmic slope of the
+        density profile, which is computed analytically for disk and ring
+        components. For exponential profiles, a simplified formula is used:
+
+        .. math::
+
+           v_{\sigma}^2 = 3.36 \frac{r}{r_e} \sigma^2,
+
+        where :math:`r_e` is the effective radius.
+
+        This method stores multiple velocity arrays:
+        - ``intrinsic``: Rotation velocity with pressure support
+        - ``intrinsic_no_dispersion``: Circular velocity without pressure support
+        - ``intrinsic_with_inclination``: Line-of-sight velocity with pressure support
+        - ``intrinsic_no_dispersion_with_inclination``: Line-of-sight velocity without pressure support
+
+        The dark matter fraction :math:`f_{\rm DM} = v_{\rm halo}^2 / v_{\rm circ}^2`
+        is also computed and stored in ``self.fdm``.
+        """
         absR = np.abs(R_array)
 
         self.V2d = np.zeros_like(R_array)
@@ -279,11 +535,125 @@ class RotationCurveObject:
         self.fdm = self.V2h / self.V2circ
 
     def apply_1D_beam_smearing(self, velocity_array, truncate=4.0, mode="nearest"):
+        r"""
+        \texttt{Deprecated. Use apply_2D_beam_smearing instead.}
+        Apply 1D Gaussian beam smearing along the major axis.
+
+        Convolves the velocity array with a 1D Gaussian kernel to simulate
+        the effect of finite spatial resolution. The kernel has standard
+        deviation :math:`\sigma_{\rm beam}` in pixel units.
+
+        Parameters
+        ----------
+        velocity_array : array_like
+            Input velocity array [km/s] to be smeared. Should be sampled on
+            the extended radial grid (``sampling_rarray_1D``).
+        truncate : float, optional
+            Truncation distance for the Gaussian kernel in units of standard
+            deviation. The kernel is truncated at :math:`\pm \mathrm{truncate}
+            \times \sigma_{\rm beam}`. Default is 4.0.
+        mode : str, optional
+            Edge handling mode for the convolution. Options are ``'nearest'``,
+            ``'constant'``, ``'reflect'``, ``'mirror'``, or ``'wrap'``.
+            Default is ``'nearest'``.
+
+        Returns
+        -------
+        ndarray
+            Beam-smeared velocity array [km/s] on the original radial grid
+            (``R_majoraxis``). The output is cropped to remove the oversampled
+            edge regions.
+
+        Notes
+        -----
+        The beam smearing is applied using a 1D Gaussian filter:
+
+        .. math::
+
+           v_{\rm smeared}(r) = \int v(r') G(r - r'; \sigma_{\rm beam}) \, dr',
+
+        where :math:`G` is a Gaussian kernel with standard deviation
+        :math:`\sigma_{\rm beam}`. The convolution is performed using
+        ``scipy.ndimage.gaussian_filter1d``.
+
+        The input array should be sampled on an extended grid that includes
+        ``oversample_edge * sigma_beam`` beyond the original edge to avoid
+        edge effects. The output is cropped to match the original radial grid.
+        """
             smeared = gaussian_filter1d(velocity_array, self.sigma_beam_pixels, truncate=truncate, mode=mode)
             N = len(smeared)
             return smeared[self.oversample_pixels: N - self.oversample_pixels]
 
     def apply_2D_beam_smearing(self, one_dimensional_vel, one_dimensional_rarray, for_dispersion=False, ndim=None):
+        r"""
+        Apply 2D Gaussian beam smearing with light weighting.
+
+        Convolves a 2D velocity field with a Gaussian beam kernel, weighted by
+        the combined light profiles of all baryonic components. The method
+        projects the 1D rotation curve onto a 2D grid, applies inclination
+        and radial velocity corrections, then convolves with an elliptical
+        Gaussian kernel.
+
+        Parameters
+        ----------
+        one_dimensional_vel : array_like
+            Input 1D velocity array [km/s] as a function of radius. This is
+            interpolated onto a 2D grid before beam smearing.
+        one_dimensional_rarray : array_like
+            Radial array [kpc] corresponding to ``one_dimensional_vel``.
+        for_dispersion : bool, optional
+            If ``True``, square the velocity before smearing (used for
+            calculating velocity dispersion from beam smearing effects).
+            Default is ``False``.
+        ndim : float, optional
+            Output dimensionality. ``1`` extracts the major axis only,
+            ``2`` returns the full 2D velocity field. If ``None``, uses
+            ``self.ndim``. Default is ``None``.
+
+        Returns
+        -------
+        V_smeared : ndarray
+            Beam-smeared velocity array [km/s]. Shape depends on ``ndim``:
+            - If ``ndim=1``: 1D array along the major axis
+            - If ``ndim=2``: 2D array of shape ``(len(R_majoraxis), len(R_majoraxis))``
+        I_smeared : ndarray
+            Beam-smeared light profile (same shape as ``V_smeared``). Used
+            for visualization and normalization purposes.
+
+        Notes
+        -----
+        The 2D beam smearing process involves several steps:
+
+        1. **Grid construction**: Create a 2D Cartesian grid from the 1D radial
+           array, accounting for the extended sampling region.
+
+        2. **Velocity interpolation**: Interpolate the 1D rotation curve onto
+           the 2D grid using cubic spline interpolation.
+
+        3. **Projection**: Project the circular velocity onto the line of sight:
+           :math:`v_{\rm LOS} = v_{\rm rot} \cos\theta \sin i + v_{\rm radial}
+           \sin\theta \sin i`, where :math:`\theta` is the azimuthal angle
+           and :math:`i` is the inclination.
+
+        4. **Light weighting**: Compute the combined light profile from all
+           baryonic components (disk, ring, bulge) on the 2D grid.
+
+        5. **Beam convolution**: Convolve with an elliptical Gaussian kernel:
+           :math:`G(x, y) = \exp[-(x^2/(2\sigma_x^2) + y^2/(2\sigma_y^2))]`,
+           where :math:`\sigma_y = \sigma_x / \cos i` accounts for the
+           inclination.
+
+        6. **Weighted averaging**: At each point, compute the light-weighted
+           average velocity:
+           :math:`v_{\rm smeared} = \sum (v \times I \times G) / \sum (I \times G)`
+
+        The elliptical beam accounts for the fact that an inclined disk appears
+        elongated along the minor axis. The kernel size is determined by
+        ``sigma_beam`` and ``oversample_edge``.
+
+        If no light profile is available (all components have zero mass), a
+        uniform light distribution is assumed with a warning.
+        """
 
         if ndim is None:
             ndim = self.ndim
@@ -410,8 +780,66 @@ class RotationCurveObject:
 
 
 def calculate_fraction_at_re(mass_components=None, reval=None):
+    r"""
+    Calculate the dark matter fraction at a specified radius.
+
+    Computes the dark matter mass fraction :math:`f_{\rm DM}` at a given
+    radius by comparing the dark matter and total circular velocity
+    contributions:
+
+    .. math::
+
+       f_{\rm DM} = \frac{v_{\rm halo}^2}{v_{\rm circ}^2}.
+
+    Parameters
+    ----------
+    mass_components : dict, optional
+        Dictionary containing mass component profiles. Keys should include:
+        - ``'halo'``: Dark matter halo profile (e.g., :class:`NFWHalo`)
+        - ``'disk'``: Disk component (e.g., :class:`FreemanDisk`)
+        - ``'ring'``: Ring component (e.g., :class:`GaussianRingProfile`)
+        - ``'bulge'``: Bulge component (e.g., :class:`SersicProfile`)
+        Values can be ``None`` if a component is not present.
+    reval : float, optional
+        Radius at which to evaluate the dark matter fraction [kpc]. If not
+        provided, defaults to the effective radius of the disk or ring
+        component. If no disk or ring is present, returns 1.0.
+
+    Returns
+    -------
+    float
+        Dark matter fraction :math:`f_{\rm DM}` at the specified radius.
+        Returns 0.0 if no halo is present, and 1.0 if no baryonic components
+        are found to estimate ``reval``.
+
+    Notes
+    -----
+    The function creates a minimal :class:`RotationCurveObject` instance
+    with beam smearing disabled to compute the velocity contributions at
+    the specified radius. The dark matter fraction is computed from the
+    squared velocities:
+
+    .. math::
+
+       f_{\rm DM} = \frac{v_{\rm halo}^2}{v_{\rm circ}^2}.
+
+    This is equivalent to the mass fraction only in the limit where the
+    mass distribution is spherically symmetric, but provides a useful
+    diagnostic for rotation curve decomposition.
+
+    Examples
+    --------
+    Calculate the dark matter fraction at the effective radius:
+
+    >>> from RotCurves.baryons import FreemanDisk
+    >>> from RotCurves.dm_halos import NFWHalo
+    >>> disk = FreemanDisk(mass=1e10, r_s=2.0)
+    >>> halo = NFWHalo(mass=1e12, concentration=10)
+    >>> components = {'disk': disk, 'halo': halo, 'ring': None, 'bulge': None}
+    >>> f_dm = calculate_fraction_at_re(mass_components=components, reval=5.0)
+    """
     if reval is None:
-        print('r_fdm not specified. Assuming reval = r_eff_disk...')
+        print('reval not specified. Assuming reval = r_eff_disk...')
         if mass_components['disk'] is not None:
             reval = mass_components['disk'].r_eff
         elif mass_components['ring'] is not None:
