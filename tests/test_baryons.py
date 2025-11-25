@@ -500,3 +500,52 @@ def test_gaussian_ring_initialization_errors():
     # Should raise error if neither r_s nor h is provided
     with pytest.raises(ValueError, match="Either r_s or h must be provided"):
         GaussianRingProfile(mass=mass, FWHM_ring=2.0, sigma_ring=1.0)
+
+
+def test_sersic_vcirc_lookup_vs_no_lookup():
+    """Test that SersicProfile vcirc is the same with or without lookup tables."""
+    mass = 1e9
+    r_s = 3.0
+    n, q0 = get_random_sersic_params()
+    
+    prof_lookup = SersicProfile(mass=mass, r_s=r_s, n=n, q0=q0, lookup=True)
+    prof_no_lookup = SersicProfile(mass=mass, r_s=r_s, n=n, q0=q0, lookup=False)
+    
+    radii = np.linspace(0.1, 5*r_s, num=50)
+    
+    vcirc_lookup = prof_lookup.vcirc(radii)
+    vcirc_no_lookup = prof_no_lookup.vcirc(radii)
+    
+    assert_allclose(
+        vcirc_lookup,
+        vcirc_no_lookup,
+        rtol=RTOL,
+        equal_nan=True,
+        err_msg="Circular velocity should be the same with or without lookup tables"
+    )
+
+
+def test_gaussian_ring_vcirc_lookup_vs_no_lookup():
+    """Test that GaussianRingProfile vcirc is the same with or without lookup tables."""
+    mass = 1e9
+    r_s = 5.0
+    h = 1.0
+
+    # Create profiles with and without lookup tables
+    ring_lookup = GaussianRingProfile(mass=mass, r_s=r_s, h=h, lookup=True)
+    ring_no_lookup = GaussianRingProfile(mass=mass, r_s=r_s, h=h, lookup=False)
+
+    # Test at various radii
+    radii = np.linspace(0.1, 5*r_s, num=50)
+
+    vcirc_lookup = ring_lookup.vcirc(radii)
+    vcirc_no_lookup = ring_no_lookup.vcirc(radii)
+
+    # Compare results - they should be similar
+    assert_allclose(
+        vcirc_lookup,
+        vcirc_no_lookup,
+        rtol=RTOL,
+        equal_nan=True,
+        err_msg="Circular velocity should be the same with or without lookup tables"
+    )

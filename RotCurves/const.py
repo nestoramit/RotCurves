@@ -56,20 +56,30 @@ def load_noor_lookuptables():
     return tables
 
 def load_gaussian_tables():
-    dir_path = LOOKUP_TABLES_PATH+'/GaussianRing_lookup_tables'
-    dir_BT_path = LOOKUP_TABLES_PATH+'/GaussianRing_BTmin_lookup_tables'
+    dir = LOOKUP_TABLES_PATH+'/GaussianRing_lookup_tables'
+    dir_BT = LOOKUP_TABLES_PATH+'/GaussianRing_BTmin_lookup_tables'
 
     tables, BT_tables = {}, {}
     # TODO: switch from invh to h
-    h_list = np.asarray(list(set([float(x[x.find('_invh') + 6:x.find('.csv')]) for x in os.listdir(dir_path) if x.find('csv') > 0])))
-    tables['h_list'] = h_list
-    for h in h_list:
-        tables[h] = np.load(os.path.join(dir_path, f"Gauss_invh_{h:2.2f}.npy"))
+    # h_list = np.asarray(list(set([float(x[x.find('_h') + 6:x.find('.csv')]) for x in os.listdir(dir_path) if x.find('csv') > 0])))
+    # tables['h_list'] = h_list
+    # for h in h_list:
+    #     tables[h] = np.load(os.path.join(dir_path, f"gaussring_invh_{h:2.2f}.npy"))
 
-    bt_h_list = np.asarray(list(set([float(x[x.find('_invh') + 6:x.find('.csv')]) for x in os.listdir(dir_BT_path) if x.find('csv') > 0])))
+    for file in os.listdir(dir):
+        if file.find(".npy") > 0:
+            h = float(file[file.find('_h')+2:file.find('.npy')])
+            tables[h] = np.load(
+                os.path.join(
+                    dir,
+                    file
+                )
+            )
+
+    bt_h_list = np.asarray(list(set([float(x[x.find('_invh') + 6:x.find('.csv')]) for x in os.listdir(dir_BT) if x.find('csv') > 0])))
     BT_tables['h_list'] = bt_h_list
     for h in bt_h_list:
-        BT_tables[h] = np.load(dir_BT_path+f"/Gauss_BTmin_invh_{h:2.2f}.npy")
+        BT_tables[h] = np.load(dir_BT+f"/Gauss_BTmin_invh_{h:2.2f}.npy")
 
     return tables, BT_tables
 

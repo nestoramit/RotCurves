@@ -274,7 +274,9 @@ class SersicProfile(SurfaceDensityProfile):
         self.q0_table = self._q0_table()
 
     def _n_table(self):
-        n_list = np.asarray(sorted(set([x[0] for x in NoordermeerLookupTables.keys()])))
+        n_list = np.asarray(
+            sorted(set([x[0] for x in NoordermeerLookupTables.keys()]))
+        )
         n_table = n_list[np.argmin(np.abs(n_list - self.n))]
         if np.abs(self.n - n_table) > 1e-2:
             logger.warning(
@@ -282,7 +284,9 @@ class SersicProfile(SurfaceDensityProfile):
         return n_table
 
     def _q0_table(self):
-        q0_list = np.asarray(sorted(set([x[1] for x in NoordermeerLookupTables.keys()])))
+        q0_list = np.asarray(
+            sorted(set([x[1] for x in NoordermeerLookupTables.keys()]))
+        )
         q0_table = q0_list[np.argmin(np.abs(q0_list - self.q0))]
         if np.abs(self.q0 - q0_table) > 1e-2:
             logger.warning(
@@ -305,12 +309,6 @@ class SersicProfile(SurfaceDensityProfile):
             dimensionless radii and the second column contains dimensionless
             squared circular velocities.
         """
-        # q0_list = NoordermeerLookupTables['q_list']
-        # if self.q0 in q0_list:
-        #     closest_q0 = self.q0
-        # else:
-        #     closest_q0 = q0_list[np.argmin(np.abs(q0_list - self.q0))]
-        #     logger.warning('Sersic disk q: non-exact value, using %2.3f instead of %2.3f' % (closest_q0, self.q0))
 
         return NoordermeerLookupTables[self.n_table, self.q0_table]
 
@@ -360,9 +358,12 @@ class SersicProfile(SurfaceDensityProfile):
             return C * v2
 
         else:
-            # TODO: calculate the circular velocity without lookup tables
-            pass
-
+            from RotCurves.calculate_tables import single_noordermeer_calculation
+            x_eff = np.atleast_1d(x) * self.r_s / self.r_eff
+            v2 = np.zeros_like(x_eff)
+            for i in range(len(x_eff)):
+                v2[i] = single_noordermeer_calculation(i, self.q0, self.n, x_eff)
+            return v2[0] if np.isscalar(x) else v2
     def dlnrho_dlnr(self, r):
         r"""
         Logarithmic slope of the surface density profile at radius ``r``.
@@ -838,7 +839,10 @@ class GaussianRingProfile(SurfaceDensityProfile):
         # load lookuptables
         # TODO: update path
         self.lookup = lookup
-        self.vcirc_lookup_table = self._vcirc_lookup_table()
+        if self.lookup:
+            self.h_table = self._h_table()
+
+        # self.vcirc_lookup_table = self._vcirc_lookup_table()
         self.btmin_lookup_table = self._btmin_lookup_table()
 
     def surface_density_function(self, x):
@@ -904,7 +908,11 @@ class GaussianRingProfile(SurfaceDensityProfile):
 
            M_s = \frac{M}{C},
 
-        where :math:`C` is the same correction factor as in ``_scale_density()``.
+        where :math:`C` is a correction factor that accounts for the ring geometry:
+
+        .. math::
+
+           C = \frac{1}{2A}\left[\exp(-A) + \sqrt{\pi A}\left(1 + \Gamma(0.5, A)\right)\right],
 
         Returns
         -------
@@ -914,6 +922,17 @@ class GaussianRingProfile(SurfaceDensityProfile):
         A = self.A
         corr = 1 / (2 * A) * (np.exp(-A) + np.sqrt(np.pi * A) * (1 + gammainc(0.5, A)))
         return self.mass / corr
+
+    def _h_table(self):
+        h_list = np.asarray(
+            sorted(set(list(GaussianRingLookupTables.keys())))
+        )
+        h_table = h_list[np.argmin(np.abs(h_list - self.h))]
+        if np.abs(self.h - h_table) > 1e-2:
+            logger.warning(
+                f"GaussianRing shape parameter h: using lookup tables, "
+                f"taking {h_table:2.2f} instead of {self.h:2.2f}")
+        return h_table
 
     def _vcirc_lookup_table(self):
         r"""
@@ -930,15 +949,15 @@ class GaussianRingProfile(SurfaceDensityProfile):
             dimensionless radii and the second column contains dimensionless
             squared circular velocities.
         """
-        h_list = GaussianRingLookupTables['h_list']
-        if self.h in h_list:
-            closest_h = self.h
-        else:
-            closest_h = h_list[np.argmin(np.abs(h_list - self.h))]
-            if self.verbose:
-                logger.warning(f'Gaussian Ring h: non-exact value, using {closest_h:2.3f} instead of {self.h:2.3f}')
+        # h_list = GaussianRingLookupTables['h_list']
+        # if self.h in h_list:
+        #     closest_h = self.h
+        # else:
+        #     closest_h = h_list[np.argmin(np.abs(h_list - self.h))]
+        #     if self.verbose:
+        #         logger.warning(f'Gaussian Ring h: non-exact value, using {closest_h:2.3f} instead of {self.h:2.3f}')
 
-        return GaussianRingLookupTables[closest_h]
+        return GaussianRingLookupTables[self.h_table]
 
     def _btmin_lookup_table(self):
         r"""
@@ -1053,7 +1072,6 @@ class GaussianRingProfile(SurfaceDensityProfile):
         p2 = 1 / (2 * np.sqrt(A)) * (gammainc(0.5, A) + gammainc(0.5, Ax) * np.sign(x - 1)) * gamma(0.5)
         return p1 + p2
 
-
     def vcirc2_dimless(self, x):
         r"""
         Dimensionless squared circular velocity :math:`f_v^2(x)` for a Gaussian ring.
@@ -1093,18 +1111,29 @@ class GaussianRingProfile(SurfaceDensityProfile):
         if self.lookup:
             # Use the lookup table for the Gaussian ring
             # TODO: something is wrong with the lookup table, it is not working. calculate it again.
-            interpolator = CubicSpline(x=self.vcirc_lookup_table[:, 0], y=self.vcirc_lookup_table[:, 1])
+            vcirc_lookup_table = self._vcirc_lookup_table()
+            interpolator = CubicSpline(
+                x=vcirc_lookup_table[:, 0],
+                y=vcirc_lookup_table[:, 1]
+            )
             v2 = interpolator(x)
 
         else:
-            Iprime = lambda t: quad(lambda s: t * (s**2 - t**2)**-0.5 * (1-s) * self.surface_density_dimless(s), t, np.inf)[0]
-            func = lambda x: quad(lambda t: -Iprime(t) * t * (x**2 - t**2)**-0.5, 0, x)[0]
-            v2 = [func(xi) for xi in x]
-            v2 = np.asarray(v2)
+            from RotCurves.calculate_tables import single_GaussianRing_integral_v2
+            isscalar = np.isscalar(x)
+            x = np.atleast_1d(x)
+            v2 = np.zeros_like(x)
+            for i in range(len(x)):
+                v2[i] = single_GaussianRing_integral_v2(i, self.h, x)
+            return v2[0] if isscalar else v2
+            # Iprime = lambda t: quad(lambda s: t * (s**2 - t**2)**-0.5 * (1-s) * self.surface_density_dimless(s), t, np.inf)[0]
+            # func = lambda x: quad(lambda t: -Iprime(t) * t * (x**2 - t**2)**-0.5, 0, x)[0]
+            # v2 = [func(xi) for xi in x]
+            # v2 = np.asarray(v2)
 
-        # TODO: the constant C should be included in the tables and removed from here
-        # C = 1.
-        C = 4 * self.A / np.pi
+        # TODO: Added the constant to single_GaussianRing_integral (remove after checks)
+        C = 1.
+        # C = 4 * self.A / np.pi
         return C * v2
 
     def dlnrho_dlnr(self, r):
