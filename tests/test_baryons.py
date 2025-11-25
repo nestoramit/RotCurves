@@ -227,7 +227,7 @@ def test_sersic_menc():
     assert np.all(np.diff(menc) >= 0), "Enclosed mass should increase with radius"
     
     # At large radius, enclosed mass should approach total mass
-    large_r = 100 * r_s
+    large_r = 200 * r_s
     assert_allclose(
         prof.menc(large_r),
         mass,

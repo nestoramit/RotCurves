@@ -580,9 +580,9 @@ class RotationCurveObject:
         ``oversample_edge * sigma_beam`` beyond the original edge to avoid
         edge effects. The output is cropped to match the original radial grid.
         """
-            smeared = gaussian_filter1d(velocity_array, self.sigma_beam_pixels, truncate=truncate, mode=mode)
-            N = len(smeared)
-            return smeared[self.oversample_pixels: N - self.oversample_pixels]
+        smeared = gaussian_filter1d(velocity_array, self.sigma_beam_pixels, truncate=truncate, mode=mode)
+        N = len(smeared)
+        return smeared[self.oversample_pixels: N - self.oversample_pixels]
 
     def apply_2D_beam_smearing(self, one_dimensional_vel, one_dimensional_rarray, for_dispersion=False, ndim=None):
         r"""
@@ -631,7 +631,7 @@ class RotationCurveObject:
            the 2D grid using cubic spline interpolation.
 
         3. **Projection**: Project the circular velocity onto the line of sight:
-           :math:`v_{\rm LOS} = v_{\rm rot} \cos\theta \sin i + v_{\rm radial}
+           :math:`v_{\rm obs} = v_{\rm rot} \cos\theta \sin i + v_{\rm radial}
            \sin\theta \sin i`, where :math:`\theta` is the azimuthal angle
            and :math:`i` is the inclination.
 
@@ -641,7 +641,7 @@ class RotationCurveObject:
         5. **Beam convolution**: Convolve with an elliptical Gaussian kernel:
            :math:`G(x, y) = \exp[-(x^2/(2\sigma_x^2) + y^2/(2\sigma_y^2))]`,
            where :math:`\sigma_y = \sigma_x / \cos i` accounts for the
-           inclination.
+           projection along the galactic plane due to the inclination.
 
         6. **Weighted averaging**: At each point, compute the light-weighted
            average velocity:
