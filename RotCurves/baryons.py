@@ -6,14 +6,18 @@ from scipy.integrate import quad
 
 from RotCurves.base_classes import SurfaceDensityProfile
 from RotCurves.const import (
-    NoordermeerLookupTables,
-    GaussianRingLookupTables,
-    GaussianRingBTminLookupTables
+    load_noor_lookuptables,
+    load_gaussian_tables,
 )
 
 # Define the logger
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger('RotCurves')
+
+# load lookup tables
+NoordermeerLookupTables = load_noor_lookuptables()
+GaussianRingLookupTables, GaussianRingBTminLookupTables = load_gaussian_tables()
+
 
 class SersicProfile(SurfaceDensityProfile):
     r"""
@@ -349,8 +353,10 @@ class SersicProfile(SurfaceDensityProfile):
             # TODO: the talbes are in x=r/reff, change to x=r/rs
             v2 = interpolator(x * self.r_s / self.r_eff)
 
-            # TODO: the constant C should be included in the tables and removed from here
-            C = 2 * self.sersic_b()**(self.n+1) / (np.pi * self.n**2)
+            # TODO: added the constant C directly to single_noordermeer_calculation (remove after checks)
+            # C = 2 * self.sersic_b()**(self.n+1) / (np.pi * self.n**2)
+            C = 1
+
             return C * v2
 
         else:

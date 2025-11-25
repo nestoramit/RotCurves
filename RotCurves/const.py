@@ -73,7 +73,5 @@ def load_gaussian_tables():
 
     return tables, BT_tables
 
-NoordermeerLookupTables = load_noor_lookuptables()
-GaussianRingLookupTables, GaussianRingBTminLookupTables = load_gaussian_tables()
 
 

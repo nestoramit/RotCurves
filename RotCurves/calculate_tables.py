@@ -1,9 +1,8 @@
 import numpy as np
 import pandas as pd
-import scipy.integrate as scp_integrate
-import scipy.special as scp_functions
-import scipy.constants as scp_const
-import scipy.interpolate as scp_interp
+from scipy.integrate import quad
+from scipy.special import k0
+from scipy.interpolate import CubicSpline
 from scipy.special import gammaincinv
 import random
 import time
@@ -13,7 +12,6 @@ import parmap
 
 from const import (
     ROOT_DIR,
-    G_CONST,
 )
 
 TABLES_PATH = os.path.join(
@@ -24,43 +22,48 @@ TABLES_PATH = os.path.join(
 # FWHM to sigma gaussian relation
 FWHM2sig = 2 * np.sqrt(2 * np.log(2))
 
-# main path
-# main_path = r'C:/Users/amitn/OneDrive - Tel-Aviv University/'
+def x_range(N):
+    X = np.logspace(-3, -1, num=int(N * 0.05), endpoint=False)
+    X = np.append(X, np.logspace(-1, np.log10(0.5), num=int(N * 0.15), endpoint=False))
+    X = np.append(X, np.logspace(np.log10(0.5), 0, num=int(N * 0.3), endpoint=False))
+    X = np.append(X, np.logspace(0, np.log10(5), num=int(N * 0.3), endpoint=False))
+    X = np.append(X, np.logspace(np.log10(5), np.log10(50.), num=int(N * 0.20), endpoint=False))
 
+    return X
 
 def single_noordermeer_calculation(idx, q0, n, xrange):
     x = xrange[idx]
     e = np.sqrt(1 - q0 * q0)
     b = gammaincinv(2 * n, 0.5)
+    const = 2 * b ** (n + 1) / (np.pi * n ** 2)
 
     if n == 1:
-        V_n = scp_integrate.quad(
-            lambda m: scp_functions.k0(b * m) * m * m / np.sqrt(x * x - (m * e) * (m * e)), 0, x
+        V_n = quad(
+            lambda m: k0(b * m) * m * m / np.sqrt(x * x - (m * e) * (m * e)), 0, x
         )[0]
     else:
-        inner_integral = lambda m: scp_integrate.quad(
+        inner_integral = lambda m: quad(
             lambda u: n * np.exp(-b*u) / np.sqrt(u**(2*n) - m**2),
             a=m**(1/n),
             b=np.inf,
-            # points=[m**(1/n)]
         )[0]
-        V_n = scp_integrate.quad(
+        V_n = quad(
             lambda m: inner_integral(m) * m**2 / np.sqrt(x**2 - (m*e)**2),
             a=0,
             b=x,
         )[0]
-        # V_n = scp_integrate.quad(
-        #     lambda m:
-        #     scp_integrate.quad(
-        #         lambda t: np.exp(- b * np.power(t, (1 / n))) * np.power(t, ((1 / n) - 1)) / np.sqrt(t * t - m * m),
-        #         m, np.inf)[0]
-        #     * m * m / np.sqrt(x * x - (m * e) * (m * e)),
-        #     0, x)[0]
-    return V_n
 
+    return V_n * const
 
-def create_noordermeer_lookuptable(q_range, n_range, N=200, tol=0.001, printtime=False, overwrite=False,
-                                   running_in_cluster=False):
+def create_noordermeer_lookuptable(
+        q_range,
+        n_range,
+        N=200,
+        tol=0.001,
+        printtime=False,
+        overwrite=False,
+        running_in_cluster=False
+):
     if not running_in_cluster:
         output_dir = os.path.join(TABLES_PATH,
                                   "Noordermeer_lookup_tables")
@@ -70,8 +73,10 @@ def create_noordermeer_lookuptable(q_range, n_range, N=200, tol=0.001, printtime
     if not os.path.exists(output_dir):
         os.mkdir(output_dir)
 
-    run_length = len(n_range) * len(q_range)
-    print("total Noordermeer lookup tables:", run_length)
+    n_runs = len(n_range) * len(q_range)
+    print(f"total Noordermeer lookup tables: {n_runs}")
+    print(f"    n indexes: {len(n_range)}")
+    print(f"    q0 values: {len(q_range)}")
 
     params_list = itertools.product(q_range, n_range)
 
@@ -83,8 +88,7 @@ def create_noordermeer_lookuptable(q_range, n_range, N=200, tol=0.001, printtime
 
         # Create test array to compare the lookup table to
         # x_test = np.asarray(random.sample(range(1, 5000), 50)) / 1000
-        x_test = np.logspace(-3, np.log10(5), num=50)
-        print(x_test)
+        x_test = np.logspace(-2, 1.5, num=100)
         indexes = range(len(x_test))
         test_results = parmap.map(single_noordermeer_calculation, indexes, q, n, x_test)
         test_results = np.asarray(test_results)
@@ -112,7 +116,7 @@ def create_noordermeer_lookuptable(q_range, n_range, N=200, tol=0.001, printtime
                 results = np.asarray(results)
 
                 # compare agains test values if < tol for all
-                inerp_vel = scp_interp.CubicSpline(x=X, y=results)
+                inerp_vel = CubicSpline(x=X, y=results)
                 ok = all((np.abs(inerp_vel(x_test) - test_results)) < tol)
 
                 if ok:
@@ -124,10 +128,11 @@ def create_noordermeer_lookuptable(q_range, n_range, N=200, tol=0.001, printtime
                     print(f"    Increasing to {N:.0f}")
 
             data = np.append(X.reshape((len(X), 1)), results.reshape(len(results), 1), axis=1)
-            cols = ['x r/reff', 'V2']
-            df = pd.DataFrame(data=data, columns=cols, dtype=float)
 
-            df.to_csv(output_name + '.csv', index=False, header=cols)
+            # cols = ['x r/reff', 'V2']
+            # df = pd.DataFrame(data=data, columns=cols, dtype=float)
+            # df.to_csv(output_name + '.csv', index=False, header=cols)
+
             np.save(output_name, data)
 
             if printtime:
@@ -140,16 +145,15 @@ def single_GaussianRing_integral(idx, invh, x_range):
     A = 4 * np.log(2)
     density_function_dimless = lambda x: np.exp(- A * invh ** 2. * np.power(x - 1., 2.))
     density_prime_function_dimless = lambda x: - 2 * A * invh ** 2. * (x - 1) * density_function_dimless(x)
-    Iprime_function = lambda a: scp_integrate.quad(
+    Iprime_function = lambda a: quad(
         lambda x: a * density_prime_function_dimless(np.sqrt(x ** 2 + a ** 2)) / np.sqrt(x ** 2 + a ** 2), 0, np.inf)[0]
     # potential_function = lambda x: integrate.quad(lambda a: np.arcsin(np.minimum(2 * a / ((a + x) + np.abs(a - x)), 1.)) * Iprime_function(a), 0, np.inf)[0]
-    V2_function = lambda x: - scp_integrate.quad(lambda a: a * Iprime_function(a) / np.sqrt(x ** 2 - a ** 2), 0, x)[0]
+    V2_function = lambda x: - quad(lambda a: a * Iprime_function(a) / np.sqrt(x ** 2 - a ** 2), 0, x)[0]
 
-    totmass = scp_integrate.quad(lambda a: a * density_function_dimless(a), 0, np.inf)[0]
-    menc_function = lambda x: scp_integrate.quad(lambda a: a * density_function_dimless(a), 0, x)[0] / totmass
+    totmass = quad(lambda a: a * density_function_dimless(a), 0, np.inf)[0]
+    menc_function = lambda x: quad(lambda a: a * density_function_dimless(a), 0, x)[0] / totmass
 
     return V2_function(x), menc_function(x)
-
 
 def create_GaussianRing_lookuptable(invh_range, N=200, tol=0.01,
                                     running_in_cluster=False, printtime=False, overwrite=False):
@@ -201,7 +205,7 @@ def create_GaussianRing_lookuptable(invh_range, N=200, tol=0.01,
                 results = np.asarray(results)
 
                 # compare agains test values if < tol for all
-                interp_vel = scp_interp.CubicSpline(x=X, y=results[:, 0])
+                interp_vel = CubicSpline(x=X, y=results[:, 0])
                 ok = all((np.abs(interp_vel(x_test) - test_results[:, 0])) < tol)
 
                 if ok:
@@ -225,78 +229,10 @@ def create_GaussianRing_lookuptable(invh_range, N=200, tol=0.01,
         j += 1
 
 
-def x_range(N):
-    X = np.logspace(-3, -1, num=int(N * 0.05), endpoint=False)
-    X = np.append(X, np.logspace(-1, np.log10(0.5), num=int(N * 0.15), endpoint=False))
-    X = np.append(X, np.logspace(np.log10(0.5), 0, num=int(N * 0.3), endpoint=False))
-    X = np.append(X, np.logspace(0, np.log10(3), num=int(N * 0.3), endpoint=False))
-    X = np.append(X, np.logspace(np.log10(3), np.log10(50.), num=int(N * 0.20), endpoint=False))
-
-    return X
-
-
-# def single_GaussianRing_BT_calculation(idx, invh, Rpeak_range):
-#     Rpeak = Rpeak_range[idx]
-#     ring_FWHM = np.round(Rpeak / invh, 2)
-#     ring_tmp = models.GaussianRingObject(mass=1., rpeak=Rpeak*kpc, ring_FWHM=ring_FWHM*kpc)
-#     ring_tmp.find_minimal_bulge()
-#     BT_min = ring_tmp.BT_min
-#
-#     return BT_min
-#
-#
-# def create_GaussianRing_BT_lookuptable(invh_range, Rpeak_range, running_in_cluster=False, printtime=False, overwrite=False):
-#     if not running_in_cluster:
-#         output_dir = os.path.join(main_path, "code", "github-rotationcurves", "lookup_tables", "GaussianRing_BTmin_lookup_tables")
-#     else:
-#         output_dir = os.path.join(main_path, "/mnt/sdceph/users/ycohen/Nestor/inputs/GaussianRing_BTmin_lookup_tables")
-#
-#     if not os.path.exists(output_dir):
-#         os.mkdir(output_dir)
-#
-#     run_length = len(invh_range)
-#     print("creating Gaussian Ring BT lookup table... Total:", run_length)
-#
-#     Rpeak_range = np.asarray(Rpeak_range)
-#     for invh in invh_range:
-#         starttime = time.time_ns()
-#         invh = np.round(invh, 2)
-#
-#         if not running_in_cluster:
-#             output_name = os.path.join(output_dir, 'Gauss_BTmin_invh_%2.2f' % invh)
-#         else:
-#             output_name = '/'.join([output_dir, 'Gauss_BTmin_invh_%2.2f' % invh])
-#
-#         do_calc = True
-#         if (os.path.exists(output_name+'.npy')) or (os.path.exists(output_name+'.csv')):
-#             print('invh=%s Already exists :)' % invh)
-#             do_calc = False
-#             if overwrite:
-#                 print('Overwriting existing file invh=%s...' % invh)
-#                 do_calc = True
-#
-#         if do_calc:
-#             print("calculating for invh=%s..." % invh)
-#             # Calculate BT min for selected invh
-#             indexes = range(len(Rpeak_range))
-#             results = parmap.map(single_GaussianRing_BT_calculation, indexes, invh, Rpeak_range)
-#             results = np.asarray(results)
-#
-#             data = np.asarray([Rpeak_range, results]).transpose()
-#             cols = ['Rpeak', 'BTmin']
-#             df = pd.DataFrame(data=data, columns=cols, dtype=float)
-#
-#             if printtime:
-#                 print('Done. invh=%s (%s sec)' % (invh, np.round((time.time_ns() - starttime) * 1e-9, 0)))
-#
-#             df.to_csv(output_name+'.csv', index=False, header=cols)
-#             np.save(output_name, data)
-
-
 if __name__ == '__main__':
     create_noordermeer_lookuptable(
-        q_range=[0.2,],
-        n_range=[4.0,],
-        overwrite=True,
+        q_range=np.arange(0.0, 1.05, 0.05),
+        n_range=[0.5, 1.0, 2.0, 3.0, 4.0],
+        overwrite=False,
         printtime=True,
     )
