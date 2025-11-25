@@ -188,13 +188,30 @@ class RotationCurveObject:
     ... )
     >>> v_obs = rc.smeared_with_inclination  # Line-of-sight velocity
     """
-    def __init__(self, galaxy=None, edge=None, dx=None, rarray=None, sigma_inst=0.,
-                 oversample=1., oversample_edge=4.,
-                 Halo=None, Disk=None, Ring=None, Bulge=None, sigma_dispersion=None,
-                 dispersion_function='const', pressure_support="general",
-                 inclination=90, PA=0., sigma_beam=None, FWHM_beam=None,
-                 apply_2D=True, include_beam_smearing=True,
-                 printtime=False, ndim=1., radial_velocity=0):
+    def __init__(self,
+                 galaxy=None,
+                 edge=None,
+                 dx=None,
+                 rarray=None,
+                 sigma_inst=0.,
+                 oversample=1.,
+                 oversample_edge=4.,
+                 Halo=None,
+                 Disk=None,
+                 Ring=None,
+                 Bulge=None,
+                 sigma_dispersion=0.,
+                 dispersion_function='const',
+                 pressure_support="general",
+                 inclination=None,
+                 PA=0.,
+                 sigma_beam=None,
+                 FWHM_beam=None,
+                 apply_2D=True,
+                 include_beam_smearing=True,
+                 printtime=False,
+                 ndim=1.,
+                 radial_velocity=0):
         if printtime:
             self.starttime = time.time()
 
@@ -266,10 +283,15 @@ class RotationCurveObject:
 
         ### only calculate intrinsic RC
         if not self.include_beam_smearing:
+            if self.inclination is None:
+                self.inclination = 90.
+                logger.warning("Rotation Curve: no inclination set, assuming inc=90 for the calculation.")
             self.make_intrinsic_rotationCurve(self.R_majoraxis)
 
         ### beam-smeared RC
         else:
+            if self.inclination is None:
+                logger.warning("Rotation Curve: no inclination set, cannot perform beam smearing.")
             ### do a 1D rotation curve ###
             if not self.apply_2D:
                 # define the 1D radial spaces
@@ -383,7 +405,7 @@ class RotationCurveObject:
               Dispersion proportional to square root of surface density:
               :math:`\sigma(r) = \sigma_0 \sqrt{\Sigma(r) / \Sigma_0}`
             - ``'power_law'``: Power-law radial dependence:
-              :math:`\sigma(r) = \sigma_0 / (1 + r / r_d)`
+              :math:`\sigma(r) = \sigma_0 / (1 + r / r_s)`
             Default is ``'const'``.
 
         Notes
@@ -394,18 +416,22 @@ class RotationCurveObject:
         constant scale height disks.
 
         The ``power_law`` form is only available when a disk component is
-        present, as it uses the disk scale radius :math:`r_d`.
+        present, as it uses the disk scale radius :math:`r_s`.
         """
         if functional_form in ['const', 'constant', 'flat']:
-            self.dispersion_func = lambda r: 1.
+            self.dispersion_func = lambda r: np.ones_like(r)
         elif functional_form in ['constant_h', 'constant_height', 'const_h']:
             if self.disk is not None:
-                self.dispersion_func = lambda r: np.sqrt(self.disk.density_function(np.abs(r)) / self.disk.Sig0)
+                self.dispersion_func = lambda r: np.sqrt(
+                    self.disk.surface_density_dimless(self.disk._normalized_radius(np.abs(r)))
+                )
             elif self.ring is not None:
-                self.dispersion_func = lambda r: np.sqrt(self.ring.density_function(np.abs(r)) / self.ring.Sig0)
+                self.dispersion_func = lambda r: np.sqrt(
+                    self.ring.surface_density_dimless(self.ring._normalized_radius(np.abs(r)))
+                )
         elif functional_form in ['power_law']:
             if self.disk is not None:
-                self.dispersion_func = lambda r: np.divide(1, 1 + (np.divide(np.abs(r), self.disk.rd, out=np.zeros_like(r), where=r!=0)))
+                self.dispersion_func = lambda r: np.divide(1, 1 + (np.divide(np.abs(r), self.disk.r_s, out=np.zeros_like(r), where=r!=0)))
 
         self.sigma_profile = self.sigma0 * self.dispersion_func(R_array)
 
@@ -492,7 +518,7 @@ class RotationCurveObject:
         ### Regular exponential profile (using re)
         if self.pressure_support in ['exponential', 'Exponential']:
             if self.disk is not None:
-                re = self.disk.re
+                re = self.disk.r_eff
             elif self.ring is not None:
                 re = self.ring.rpeak
             else:
@@ -531,8 +557,9 @@ class RotationCurveObject:
         self.intrinsic_no_dispersion_with_inclination = self.intrinsic_no_dispersion * np.sin(np.deg2rad(self.inclination))
         self.intrinsic = np.sqrt(np.maximum(0, self.V2rot)) * np.sign(R_array)
         self.intrinsic_with_inclination = self.intrinsic * np.sin(np.deg2rad(self.inclination))
+        self.velocity_dispersion = self.sigma_profile
 
-        self.fdm = self.V2h / self.V2circ
+        self.fdm = np.nan_to_num(self.V2h / self.V2circ, nan=0.0)
 
     def apply_1D_beam_smearing(self, velocity_array, truncate=4.0, mode="nearest"):
         r"""

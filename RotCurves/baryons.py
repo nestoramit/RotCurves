@@ -490,7 +490,6 @@ class FreemanDisk(SurfaceDensityProfile):
         """
         return np.exp(-x)
 
-
     def _calculate_effective_radius_from_scale(self):
         r"""
         Calculate the effective radius from the scale radius for an exponential disk.
