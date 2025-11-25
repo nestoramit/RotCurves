@@ -20,8 +20,8 @@ ATOL = 0.0
 
 # Noordermeer params to test
 noordermeer_params_allowed = list(product(
-    [0.5, 1],
-    [0.2, 0.25]
+    [0.5, 1.0, 4.0],
+    [0.0, 0.2, 1.0]
 ))
 
 def get_random_sersic_params():
