@@ -5,7 +5,7 @@ import time
 import numpy as np
 
 from RotCurves.galaxy_model import GalaxyObject
-from RotCurves.base_utils import make_pretty_plot
+from RotCurves.plotting import make_pretty_plot
 
 sys.path.insert(0, r"/mnt/sdceph/users/ycohen/Nestor/scripts")
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -107,7 +107,7 @@ def MCMC_run(galaxies_to_run=["all"], metadata_table_path=None, galaxies_outputs
             mcmc_fitter = MCMC_fitter(
                 galaxy=Galaxy,
                 nwalkers=mcmc_hyperparameters["nwalkers"],
-                nsteps=mcmc_hyperparameters["niter"],
+                nsteps=mcmc_hyperparameters["nsteps"],
                 nburn=mcmc_hyperparameters["nburn"],
                 niter_per_loop=mcmc_hyperparameters["niter_per_loop"],
                 moves=mcmc_hyperparameters["moves"],
@@ -136,4 +136,4 @@ if __name__   == '__main__':
     MCMC_run(galaxies_to_run=['zC_406690-MassiveRing'],
              metadata_table_path=fr"C:\Users\{username}\OneDrive - Tel-Aviv University\RotCurvesMCMC\metadata_tables\metadata_table_rings.xlsx",
              obsdata_dir=fr"C:\Users\{username}\OneDrive - Tel-Aviv University\MPE\RC_raw_data",
-             mp=False, num_walkers=100, num_burnins=1, num_steps=100)
+             mp=False, num_walkers=20, num_burnins=1, num_steps=1)
