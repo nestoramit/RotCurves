@@ -163,13 +163,13 @@ def test_inclination_effect():
     
     rc_edgeon = RotationCurveObject(
         edge=20.0, dx=0.1, Disk=disk,
-        inclination=80.0,  # edge-on
+        inclination=85.0,  # edge-on
         include_beam_smearing=False
     )
     
     rc_faceon = RotationCurveObject(
         edge=20.0, dx=0.1, Disk=disk,
-        inclination=10.0,  # face-on
+        inclination=0.0,  # face-on
         include_beam_smearing=False
     )
     
@@ -394,10 +394,9 @@ def test_oversample_parameter():
     assert np.isclose(rc_oversampled.edge, rc_normal.edge, rtol=RTOL)
 
 
-def test_all_dispersion_function_forms():
-    """Test all accepted forms for dispersion_function parameter."""
+def test_dispersion_function_const():
+    """Test constant dispersion function forms."""
     disk = FreemanDisk(mass=1e10, r_s=2.0)
-    ring = GaussianRingProfile(mass=1e9, r_s=5.0, h=2.0, lookup=False)
     sigma_dispersion = 20.0  # km/s
     
     # Test constant dispersion forms
@@ -412,7 +411,15 @@ def test_all_dispersion_function_forms():
         
         assert len(rc.sigma_profile) == len(rc.R_majoraxis)
         assert_allclose(rc.sigma_profile, sigma_dispersion, rtol=RTOL, atol=ATOL)
-        
+        assert np.all(np.isfinite(rc.sigma_profile))
+        assert np.all(rc.sigma_profile >= 0)
+
+
+def test_dispersion_function_constant_h_with_disk():
+    """Test constant height dispersion function forms with disk."""
+    disk = FreemanDisk(mass=1e10, r_s=2.0)
+    sigma_dispersion = 20.0  # km/s
+    
     # Test constant height dispersion forms with disk
     constant_h_forms = ['constant_h', 'constant_height', 'const_h']
     for form in constant_h_forms:
@@ -426,8 +433,16 @@ def test_all_dispersion_function_forms():
         assert len(rc.sigma_profile) == len(rc.R_majoraxis)
         assert np.all(rc.sigma_profile >= 0)
         assert np.var(rc.sigma_profile) > 0
+        assert np.all(np.isfinite(rc.sigma_profile))
+
+
+def test_dispersion_function_constant_h_with_ring():
+    """Test constant height dispersion function forms with ring (no disk)."""
+    ring = GaussianRingProfile(mass=1e9, r_s=5.0, h=2.0, lookup=False)
+    sigma_dispersion = 20.0  # km/s
     
     # Test constant height dispersion forms with ring (no disk)
+    constant_h_forms = ['constant_h', 'constant_height', 'const_h']
     for form in constant_h_forms:
         rc = RotationCurveObject(
             edge=20.0, dx=0.1, Ring=ring,
@@ -439,6 +454,13 @@ def test_all_dispersion_function_forms():
         # Should vary with ring surface density
         assert len(rc.sigma_profile) == len(rc.R_majoraxis)
         assert np.all(rc.sigma_profile >= 0)
+        assert np.all(np.isfinite(rc.sigma_profile))
+
+
+def test_dispersion_function_power_law():
+    """Test power law dispersion function form."""
+    disk = FreemanDisk(mass=1e10, r_s=2.0)
+    sigma_dispersion = 20.0  # km/s
     
     # Test power law dispersion form (requires disk)
     rc = RotationCurveObject(
@@ -453,17 +475,4 @@ def test_all_dispersion_function_forms():
     assert np.all(rc.sigma_profile >= 0)
     # Should decrease with radius (power law form)
     assert rc.sigma_profile[0] > rc.sigma_profile[-1]
-    
-    # Test that all forms produce finite, positive dispersion values
-    all_forms = ['const', 'constant', 'flat', 'constant_h', 'constant_height', 'const_h', 'power_law']
-    for form in all_forms:
-        rc = RotationCurveObject(
-            edge=20.0, dx=0.1, Disk=disk,
-            sigma_dispersion=sigma_dispersion,
-            dispersion_function=form,
-            include_beam_smearing=False
-        )
-        
-        assert np.all(np.isfinite(rc.sigma_profile))
-        assert np.all(rc.sigma_profile >= 0)
-        assert len(rc.sigma_profile) == len(rc.R_majoraxis)
+    assert np.all(np.isfinite(rc.sigma_profile))
