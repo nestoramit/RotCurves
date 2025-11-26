@@ -5,16 +5,16 @@ import datetime
 import numpy as np
 import pandas as pd
 import emcee
-# import corner
+import corner
 import parmap
 import matplotlib.pyplot as plt
-# import seaborn
+import seaborn
 from matplotlib import patches as mpl_patches
 from multiprocessing import Pool
 from scipy.interpolate import CubicSpline
 from matplotlib.ticker import MultipleLocator
 
-from RotCurves.base_utils import figure
+from RotCurves.plotting import figure
 from RotCurves.galaxy_model import GalaxyObject
 from RotCurves.rotation_curve import RotationCurveObject, calculate_fraction_at_re
 from RotCurves.mass_model import create_components

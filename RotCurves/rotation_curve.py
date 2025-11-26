@@ -8,7 +8,10 @@ from scipy.signal import windows
 
 from RotCurves.baryons import *
 from RotCurves.dm_halos import *
-from RotCurves.base_utils import create_r_space
+from RotCurves.base_utils import (
+    create_r_space,
+    safe_sqrt,
+    )
 
 # Define the logger
 logging.basicConfig(level=logging.INFO)
@@ -212,75 +215,49 @@ class RotationCurveObject:
                  printtime=False,
                  ndim=1.,
                  radial_velocity=0):
+        
+        # Initialize timing if requested
         if printtime:
             self.starttime = time.time()
-
+        
+        # Store all parameters directly
+        # Mass components
         self.galaxy = galaxy
         self.halo = Halo
         self.disk = Disk
         self.ring = Ring
         self.bulge = Bulge
+        
+        # Configuration parameters
         self.inclination = inclination
+        self.PA = PA
+        self.ndim = ndim
+        self.sigma0 = sigma_dispersion
+        self.dispersion_function = dispersion_function
+        self.pressure_support = pressure_support
+        self.Vradial = radial_velocity
+        
+        # Beam and sampling parameters
         self.sigma_beam = sigma_beam
         self.FWHM_beam = FWHM_beam
         self.apply_2D = apply_2D
         self.include_beam_smearing = include_beam_smearing
-        self.oversample_edge = oversample_edge
         self.oversample = oversample
-
+        self.oversample_edge = oversample_edge
         self.sigma_inst = sigma_inst
-        self.sigma0 = sigma_dispersion
-        self.dispersion_function = dispersion_function
-        self.pressure_support = pressure_support
-        self.ndim = ndim
-        self.PA = PA
-        self.Vradial = radial_velocity
-
-        if self.sigma_beam is None and self.FWHM_beam is not None:
-            self.sigma_beam = self.FWHM_beam / (2 * np.sqrt(2 * np.log(2)))
-
-        if galaxy is not None:
-            self.dx = galaxy.dx
-            self.edge = galaxy.edge
-            self.oversample_edge = galaxy.oversample_edge
-            self.oversample = galaxy.oversample
-            self.sigma_inst = galaxy.sigma_inst
-        elif edge is not None:
-            if dx is None:
-                print('dx not specified. assuming dx = 0.1 [kpc].')
-                self.edge = edge
-                self.dx = 0.1
-
-            else:
-                self.dx = dx
-                self.edge = edge
-                self.oversample_edge = oversample_edge
-                self.sigma_inst = sigma_inst
-        else:
-            self.dx = dx
-            self.oversample_edge = oversample_edge
-
-        if self.sigma_inst is None:
-            self.sigma_inst = 0
-
-        if self.oversample_edge is None:
-            self.oversample_edge = 4
-
-        # apply oversample to pixels scale
-        if self.dx is not None:
-            self.dx = self.dx / self.oversample
-
-        if rarray is not None:
-            self.R_majoraxis = rarray
-            self.edge = np.max(rarray)
-            if len(rarray) > 1:
-                self.dx = np.diff(rarray)[0]
-        else:
-            self.R_majoraxis = create_r_space(edge=self.edge, resolution=self.dx)
-
-        if self.sigma_beam is not None:
-            self.sigma_beam_pixels = round(self.sigma_beam / self.dx)
-
+        
+        # Process and validate parameters
+        self._process_beam_conversion()
+        self._process_galaxy_overrides()
+        self._set_parameter_defaults()
+        
+        # Setup spatial grid
+        self._setup_spatial_grid(rarray, edge, dx)
+        
+        # Setup derived beam parameters
+        self._setup_derived_beam_parameters()
+        
+        # Keep the existing beam smearing calculation code unchanged
         ### only calculate intrinsic RC
         if not self.include_beam_smearing:
             if self.inclination is None:
@@ -385,6 +362,60 @@ class RotationCurveObject:
                 if printtime:
                     print('time for 2D:', np. round(time.time() - self.starttime, 1))
 
+    def _process_beam_conversion(self):
+        """Convert FWHM to sigma if needed."""
+        if self.sigma_beam is None and self.FWHM_beam is not None:
+            self.sigma_beam = self.FWHM_beam / (2 * np.sqrt(2 * np.log(2)))
+
+    def _process_galaxy_overrides(self):
+        """Override parameters with values from galaxy object if provided."""
+        if self.galaxy is not None:
+            galaxy_attrs = ['dx', 'edge', 'oversample_edge', 'oversample', 'sigma_inst']
+            for attr in galaxy_attrs:
+                if hasattr(self.galaxy, attr):
+                    setattr(self, attr, getattr(self.galaxy, attr))
+
+    def _set_parameter_defaults(self):
+        """Set default values for parameters that might be None."""
+        if self.sigma_inst is None:
+            self.sigma_inst = 0
+        
+        if self.oversample_edge is None:
+            self.oversample_edge = 4
+
+    def _setup_spatial_grid(self, rarray, edge, dx):
+        """Setup the spatial grid for calculations."""
+        if rarray is not None:
+            self.R_majoraxis = rarray
+            self.edge = np.max(rarray)
+            if len(rarray) > 1:
+                self.dx = np.diff(rarray)[0]
+        elif edge is not None:
+            self.edge = edge
+            if dx is None:
+                logger.info('dx not specified. Using default dx = 0.1 [kpc].')
+                self.dx = 0.1
+            else:
+                self.dx = dx
+        elif self.galaxy is None:
+            raise ValueError("Must provide either 'rarray', 'edge', or 'galaxy' parameter")
+        
+        # Apply oversampling to pixel scale
+        if hasattr(self, 'dx') and self.dx is not None:
+            self.dx = self.dx / self.oversample
+        
+        # Create radial array if not already set from rarray
+        if not hasattr(self, 'R_majoraxis'):
+            if hasattr(self, 'edge') and hasattr(self, 'dx'):
+                self.R_majoraxis = create_r_space(edge=self.edge, resolution=self.dx)
+            else:
+                raise ValueError("Cannot create radial array: missing 'edge' or 'dx' parameters")
+
+    def _setup_derived_beam_parameters(self):
+        """Setup parameters derived from beam settings."""
+        if self.sigma_beam is not None and hasattr(self, 'dx') and self.dx is not None:
+            self.sigma_beam_pixels = round(self.sigma_beam / self.dx)
+
     def get_dispersion_profile(self, R_array, functional_form='const'):
         r"""
         Calculate the velocity dispersion profile.
@@ -418,22 +449,52 @@ class RotationCurveObject:
         The ``power_law`` form is only available when a disk component is
         present, as it uses the disk scale radius :math:`r_s`.
         """
-        if functional_form in ['const', 'constant', 'flat']:
-            self.dispersion_func = lambda r: np.ones_like(r)
-        elif functional_form in ['constant_h', 'constant_height', 'const_h']:
-            if self.disk is not None:
-                self.dispersion_func = lambda r: np.sqrt(
-                    self.disk.surface_density_dimless(self.disk._normalized_radius(np.abs(r)))
-                )
-            elif self.ring is not None:
-                self.dispersion_func = lambda r: np.sqrt(
-                    self.ring.surface_density_dimless(self.ring._normalized_radius(np.abs(r)))
-                )
-        elif functional_form in ['power_law']:
-            if self.disk is not None:
-                self.dispersion_func = lambda r: np.divide(1, 1 + (np.divide(np.abs(r), self.disk.r_s, out=np.zeros_like(r), where=r!=0)))
-
+        # Define dispersion functions
+        dispersion_functions = {
+            ('const', 'constant', 'flat'): self._get_constant_dispersion,
+            ('constant_h', 'constant_height', 'const_h'): self._get_surface_density_dispersion,
+            ('power_law',): self._get_power_law_dispersion,
+        }
+        
+        # Find matching function
+        for forms, func in dispersion_functions.items():
+            if functional_form in forms:
+                self.dispersion_func = func
+                break
+        else:
+            logger.warning(
+                f"Rotation Curve: Pressure Suppport: Unknown dispersion function: {functional_form}."
+                "Using constant dispersion.")
+            self.dispersion_func = self._get_constant_dispersion
+        
         self.sigma_profile = self.sigma0 * self.dispersion_func(R_array)
+
+    def _get_constant_dispersion(self, r):
+        """Helper for constant dispersion."""
+        return np.ones_like(r)
+
+    def _get_surface_density_dispersion(self, r):
+        """Helper for surface density-based dispersion."""
+        for component in [self.disk, self.ring]:
+            if component is not None:
+                return np.sqrt(component.surface_density_dimless(
+                    component._normalized_radius(np.abs(r))
+                ))
+                break
+        logger.warning(
+            "Rotation Curve: Pressure Suppport: No disk or ring component found with dispersion function: constant_height."
+            "Using constant dispersion.")
+        return np.ones_like(r)
+
+    def _get_power_law_dispersion(self, r):
+        """Helper for power-law dispersion."""
+        if self.disk is not None:
+            return np.divide(1, 1 + (np.divide(np.abs(r), self.disk.r_s, 
+                                              out=np.zeros_like(r), where=r!=0)))
+        logger.warning(
+            "Rotation Curve: Pressure Suppport: No disk component found with dispersion function: power_law."
+            "Using constant dispersion.")
+        return np.ones_like(r)
 
     def make_intrinsic_rotationCurve(self, R_array):
         r"""
@@ -485,34 +546,26 @@ class RotationCurveObject:
         is also computed and stored in ``self.fdm``.
         """
         absR = np.abs(R_array)
-
-        self.V2d = np.zeros_like(R_array)
-        self.Vd = np.zeros_like(R_array)
-        self.V2b = np.zeros_like(R_array)
-        self.Vb = np.zeros_like(R_array)
-        self.V2r = np.zeros_like(R_array)
-        self.Vr = np.zeros_like(R_array)
-        self.V2h = np.zeros_like(R_array)
-        self.Vh = np.zeros_like(R_array)
-
-        if self.disk is not None:
-            self.V2d = self.disk.vcirc2(R_array)
-            self.Vd = self.disk.vcirc(R_array)
-        if self.ring is not None:
-            self.V2r = self.ring.vcirc2(R_array)
-            self.Vr = self.ring.vcirc(R_array)
-        if self.bulge is not None:
-            self.V2b = self.bulge.vcirc2(R_array)
-            self.Vb = self.bulge.vcirc(R_array)
-        if self.halo is not None:
-            # if (self.disk is not None) and (self.bulge is not None):
-            #     self.halo.get_RC(R_array, disk=self.disk, bulge=self.bulge)
-            # elif (self.ring is not None) and (self.bulge is not None):
-            #     self.halo.get_RC(R_array, disk=self.ring, bulge=self.bulge)
-            # else:
-            self.V2h = self.halo.vcirc2(R_array)
-            self.Vh = self.halo.vcirc(R_array)
-
+        
+        # Initialize all velocity arrays at once
+        velocity_components = ['V2d', 'Vd', 'V2b', 'Vb', 'V2r', 'Vr', 'V2h', 'Vh']
+        for attr in velocity_components:
+            setattr(self, attr, np.zeros_like(R_array))
+        
+        # Calculate component velocities using a mapping
+        components_map = {
+            'disk': ('V2d', 'Vd'),
+            'ring': ('V2r', 'Vr'), 
+            'bulge': ('V2b', 'Vb'),
+            'halo': ('V2h', 'Vh')
+        }
+        
+        for comp_name, (v2_attr, v_attr) in components_map.items():
+            component = getattr(self, comp_name)
+            if component is not None:
+                setattr(self, v2_attr, component.vcirc2(R_array))
+                setattr(self, v_attr, component.vcirc(R_array))
+        
         self.get_dispersion_profile(R_array, functional_form=self.dispersion_function)
         self.V2sigma = np.zeros_like(absR)
         ### Regular exponential profile (using re)
@@ -524,7 +577,7 @@ class RotationCurveObject:
             else:
                 logger.warning('PRESSURE SUPPORT: exponential: No disk or rings component found, assuming Re=1 kpc...')
                 re = 1.
-            self.V2sigma += 3.36 * (absR / re) * self.sigma_profile ** 2
+            self.V2sigma += 3.36 * (R_array / re) * self.sigma_profile ** 2
 
         ### General Burkert(2010) formula using analytical derivatives of density profiles
         elif self.pressure_support in ['general', 'General', 'Generalized', 'generalized', 'burkert', 'burkert10', 'Burkert', 'Burkert10']:
@@ -536,26 +589,25 @@ class RotationCurveObject:
                                         2 * self.sigma_profile ** 2 * comp.dlnrho_dlnr(absR))
 
         self.V2sigma = np.nan_to_num(self.V2sigma)
-        # Vsigma_interim = np.copy(self.V2sigma)
-        # Vsigma_interim[Vsigma_interim < 0] = 0
-        self.Vsigma = np.sqrt(np.abs(self.V2sigma)) * np.sign(self.V2sigma)
+        self.Vsigma = safe_sqrt(self.V2sigma, sign_array=R_array)
+        # self.Vsigma = np.sqrt(np.abs(self.V2sigma)) * np.sign(self.V2sigma)
 
-        ### baryons velocity
         self.V2baryon = self.V2d + self.V2b + self.V2r
-        self.Vbaryon = np.sqrt(np.maximum(0, self.V2baryon)) * np.sign(R_array)
+        self.Vbaryon = safe_sqrt(self.V2baryon, sign_array=R_array)
+        # self.Vbaryon = np.sqrt(np.maximum(0, self.V2baryon)) * np.sign(R_array)
 
-        ### circular velocity
         self.V2circ = self.V2baryon + self.V2h
-        self.Vcirc = np.sqrt(np.maximum(0, self.V2circ)) * np.sign(R_array)
+        # self.Vcirc = np.sqrt(np.maximum(0, self.V2circ)) * np.sign(R_array)
+        self.Vcirc = safe_sqrt(self.V2circ, sign_array=R_array)
 
-        ### correct for pressure support (Vrot)
         self.V2rot = self.V2circ + self.V2sigma
-        self.Vrot = np.sqrt(np.maximum(0, self.V2rot))
+        # self.Vrot = np.sqrt(np.maximum(0, self.V2rot)) * np.sign(R_array)
+        self.Vrot = safe_sqrt(self.V2rot, sign_array=R_array)
 
         ### final velocities
-        self.intrinsic_no_dispersion = np.sqrt(np.maximum(0, self.V2circ)) * np.sign(R_array)
+        self.intrinsic_no_dispersion = self.Vcirc
         self.intrinsic_no_dispersion_with_inclination = self.intrinsic_no_dispersion * np.sin(np.deg2rad(self.inclination))
-        self.intrinsic = np.sqrt(np.maximum(0, self.V2rot)) * np.sign(R_array)
+        self.intrinsic = self.Vrot
         self.intrinsic_with_inclination = self.intrinsic * np.sin(np.deg2rad(self.inclination))
         self.velocity_dispersion = self.sigma_profile
 
