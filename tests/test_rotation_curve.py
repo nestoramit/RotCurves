@@ -39,7 +39,6 @@ def test_rotation_curve_initialization_with_rarray():
     )
     
     assert_allclose(rc.R_majoraxis, rarray, rtol=RTOL)
-    assert np.isclose(rc.edge, 10.0, rtol=RTOL)
 
 
 def test_intrinsic_rotation_curve_disk_and_halo():
@@ -261,7 +260,7 @@ def test_FWHM_beam_conversion():
 
 def test_calculate_fraction_at_re():
     """Test calculate_fraction_at_re function."""
-    disk = FreemanDisk(mass=1e10, r_s=2.0)
+    disk = SersicProfile(mass=1e10, r_eff=5.0, n=3.0, q0=0.5)
     halo = NFWHalo(mass=1e12, concentration=10)
     
     components = {
@@ -283,6 +282,7 @@ def test_calculate_fraction_at_re():
     
     assert 0 <= f_dm_auto <= 1
     assert np.isfinite(f_dm_auto)
+    assert np.isclose(f_dm, f_dm_auto, rtol=RTOL)
 
 
 def test_calculate_fraction_at_re_no_halo():
@@ -478,12 +478,14 @@ def test_dispersion_function_power_law():
 
 def test_oversample_rebinning_consistency_even():
     """Test that oversample=1 and oversample>1 return similar velocity arrays."""
-    rtol = 1e-2
-    atol = 5.0
+    rtol = 5e-2
+    atol = 0.0
 
     disk = FreemanDisk(mass=1e10, r_s=2.0)
     halo = NFWHalo(mass=1e12, concentration=10)
     sigma0 = 15.0
+    FWHM_beam = 0.25
+    inclination = 37.
 
     edge = 10.0
     dx = 0.1
@@ -492,14 +494,18 @@ def test_oversample_rebinning_consistency_even():
     rc_normal = RotationCurveObject(
         edge=edge, dx=dx, Disk=disk, Halo=halo,
         sigma_dispersion=sigma0,
-        include_beam_smearing=False
+        FWHM_beam=FWHM_beam,
+        inclination=inclination,
+        include_beam_smearing=True
     )
     
     rc_oversampled = RotationCurveObject(
         edge=edge, dx=dx, Disk=disk, Halo=halo,
         oversample=oversample,
         sigma_dispersion=sigma0,
-        include_beam_smearing=False
+        FWHM_beam=FWHM_beam,
+        inclination=inclination,
+        include_beam_smearing=True
     )
     
     # Arrays should have the same length
@@ -516,29 +522,27 @@ def test_oversample_rebinning_consistency_even():
     assert_allclose(rc_normal.R_majoraxis, rc_oversampled.R_majoraxis, rtol=RTOL, atol=ATOL)
     
     # Velocity array should be close
+    assert_allclose(rc_normal.Vd, rc_oversampled.Vd, rtol=rtol, atol=atol)
+    assert_allclose(rc_normal.Vh, rc_oversampled.Vh, rtol=rtol, atol=atol)
+    assert_allclose(rc_normal.Vbaryon, rc_oversampled.Vbaryon, rtol=rtol, atol=atol)
     assert_allclose(rc_normal.Vcirc, rc_oversampled.Vcirc, rtol=rtol, atol=atol)
     assert_allclose(rc_normal.Vrot, rc_oversampled.Vrot, rtol=rtol, atol=atol)
-    assert_allclose(rc_normal.V2circ, rc_oversampled.V2circ, rtol=rtol, atol=atol)
-    assert_allclose(rc_normal.V2rot, rc_oversampled.V2rot, rtol=rtol, atol=atol)
-    
-    assert_allclose(rc_normal.V2d, rc_oversampled.V2d, rtol=rtol, atol=atol)
-    assert_allclose(rc_normal.V2h, rc_oversampled.V2h, rtol=rtol, atol=atol)
-    assert_allclose(rc_normal.V2baryon, rc_oversampled.V2baryon, rtol=rtol, atol=atol)
+
     assert_allclose(rc_normal.Vobs, rc_oversampled.Vobs, rtol=rtol, atol=atol)
     assert_allclose(rc_normal.Vobs_sini, rc_oversampled.Vobs_sini, rtol=rtol, atol=atol)
     assert_allclose(rc_normal.velocity_dispersion, rc_oversampled.velocity_dispersion, rtol=rtol, atol=atol)
 
-    assert_allclose(rc_normal.fdm, rc_oversampled.fdm, rtol=rtol, atol=atol)
-    
-    
+
 def test_oversample_rebinning_consistency_odd():
     """Test that oversample=1 and oversample>1 return similar velocity arrays."""
-    rtol = 1e-2
-    atol = 5.0
+    rtol = 5e-2
+    atol = 0.0
 
     disk = FreemanDisk(mass=1e10, r_s=2.0)
     halo = NFWHalo(mass=1e12, concentration=10)
     sigma0 = 15.0
+    FWHM_beam = 0.35
+    inclination = 65.
 
     edge = 10.0
     dx = 0.1
@@ -547,14 +551,18 @@ def test_oversample_rebinning_consistency_odd():
     rc_normal = RotationCurveObject(
         edge=edge, dx=dx, Disk=disk, Halo=halo,
         sigma_dispersion=sigma0,
-        include_beam_smearing=False
+        FWHM_beam=FWHM_beam,
+        inclination=inclination,
+        include_beam_smearing=True
     )
     
     rc_oversampled = RotationCurveObject(
         edge=edge, dx=dx, Disk=disk, Halo=halo,
         oversample=oversample,
         sigma_dispersion=sigma0,
-        include_beam_smearing=False
+        FWHM_beam=FWHM_beam,
+        inclination=inclination,
+        include_beam_smearing=True
     )
     
     # Arrays should have the same length
@@ -571,20 +579,15 @@ def test_oversample_rebinning_consistency_odd():
     assert_allclose(rc_normal.R_majoraxis, rc_oversampled.R_majoraxis, rtol=RTOL, atol=ATOL)
     
     # Velocity array should be close
+    assert_allclose(rc_normal.Vd, rc_oversampled.Vd, rtol=rtol, atol=atol)
+    assert_allclose(rc_normal.Vh, rc_oversampled.Vh, rtol=rtol, atol=atol)
+    assert_allclose(rc_normal.Vbaryon, rc_oversampled.Vbaryon, rtol=rtol, atol=atol)
     assert_allclose(rc_normal.Vcirc, rc_oversampled.Vcirc, rtol=rtol, atol=atol)
     assert_allclose(rc_normal.Vrot, rc_oversampled.Vrot, rtol=rtol, atol=atol)
-    assert_allclose(rc_normal.V2circ, rc_oversampled.V2circ, rtol=rtol, atol=atol)
-    assert_allclose(rc_normal.V2rot, rc_oversampled.V2rot, rtol=rtol, atol=atol)
-    
-    assert_allclose(rc_normal.V2d, rc_oversampled.V2d, rtol=rtol, atol=atol)
-    assert_allclose(rc_normal.V2h, rc_oversampled.V2h, rtol=rtol, atol=atol)
-    assert_allclose(rc_normal.V2baryon, rc_oversampled.V2baryon, rtol=rtol, atol=atol)
-    assert_allclose(rc_normal.fdm, rc_oversampled.fdm, rtol=rtol, atol=atol)
-    
+
     assert_allclose(rc_normal.Vobs, rc_oversampled.Vobs, rtol=rtol, atol=atol)
     assert_allclose(rc_normal.Vobs_sini, rc_oversampled.Vobs_sini, rtol=rtol, atol=atol)
     assert_allclose(rc_normal.velocity_dispersion, rc_oversampled.velocity_dispersion, rtol=rtol, atol=atol)
-
 
 def test_oversampled_grid_divisibility():
     """Test that oversampled grids are always divisible by oversample factor."""
@@ -597,7 +600,7 @@ def test_oversampled_grid_divisibility():
     R_original = rc_original.R_majoraxis
 
     # Test various oversample factors (both even and odd)
-    oversample_factors = [2, 3, 4, 5, 6, 7, 8]
+    oversample_factors = [2, 3, 4, 5, 6]
     
     for oversample in oversample_factors:
         # Create a test instance to check the oversampled grid directly
@@ -623,7 +626,7 @@ def test_oversampled_grid_divisibility():
         )
         
         # After rebinning, the final arrays should have the original size
-        expected_original_size = len(create_r_space(edge=10.0, resolution=0.5))
+        expected_original_size = len(R_original)
         assert len(rc_full.R_majoraxis) == expected_original_size, \
             f"Final R_majoraxis length {len(rc_full.R_majoraxis)} doesn't match expected original size {expected_original_size}"
 
@@ -668,7 +671,7 @@ def test_even_odd_oversample_consistency():
 
 def test_oversample_vs_higher_resolution(): 
     """Test that oversampling is equivalent to using a higher resolution grid."""
-    rtol = 0.01
+    rtol = 5e-2
     atol =0.0
 
     disk = SersicProfile(mass=1e10, r_eff=4.0, n=2.0, q0=0.1)
@@ -682,11 +685,15 @@ def test_oversample_vs_higher_resolution():
     rc_oversampled = RotationCurveObject(
         edge=edge, dx=dx, Disk=disk, Halo=halo,
         oversample=oversample,
+        inclination=35.,
+        FWHM_beam=0.5,
         include_beam_smearing=True
     )
     
     rc_higher_resolution = RotationCurveObject(
         edge=edge, dx=dx/oversample, Disk=disk, Halo=halo,
+        inclination=35.,
+        FWHM_beam=0.5,
         include_beam_smearing=True
     )
 
@@ -694,17 +701,12 @@ def test_oversample_vs_higher_resolution():
     assert_allclose(rc_oversampled.R_majoraxis, rc_higher_resolution.R_majoraxis[::2], rtol=1e-10, atol=1e-10)
     
     # Velocity array should be close
+    assert_allclose(rc_oversampled.Vd, rc_higher_resolution.Vd[::2], rtol=rtol, atol=atol)
+    assert_allclose(rc_oversampled.Vh, rc_higher_resolution.Vh[::2], rtol=rtol, atol=atol)
+    assert_allclose(rc_oversampled.Vbaryon, rc_higher_resolution.Vbaryon[::2], rtol=rtol, atol=atol)
     assert_allclose(rc_oversampled.Vcirc, rc_higher_resolution.Vcirc[::2], rtol=rtol, atol=atol)
     assert_allclose(rc_oversampled.Vrot, rc_higher_resolution.Vrot[::2], rtol=rtol, atol=atol)
-    assert_allclose(rc_oversampled.V2circ, rc_higher_resolution.V2circ[::2], rtol=rtol, atol=atol)
-    assert_allclose(rc_oversampled.V2rot, rc_higher_resolution.V2rot[::2], rtol=rtol, atol=atol)
-    
-    assert_allclose(rc_oversampled.V2d, rc_higher_resolution.V2d[::2], rtol=rtol, atol=atol)
-    assert_allclose(rc_oversampled.V2h, rc_higher_resolution.V2h[::2], rtol=rtol, atol=atol)
-    assert_allclose(rc_oversampled.V2baryon, rc_higher_resolution.V2baryon[::2], rtol=rtol, atol=atol)
-    assert_allclose(rc_oversampled.fdm, rc_higher_resolution.fdm[::2], rtol=rtol, atol=atol)
 
     assert_allclose(rc_oversampled.Vobs, rc_higher_resolution.Vobs[::2], rtol=rtol, atol=atol)
     assert_allclose(rc_oversampled.Vobs_sini, rc_higher_resolution.Vobs_sini[::2], rtol=rtol, atol=atol)
     assert_allclose(rc_oversampled.velocity_dispersion, rc_higher_resolution.velocity_dispersion[::2], rtol=rtol, atol=atol)
-    

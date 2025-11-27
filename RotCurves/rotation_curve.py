@@ -265,7 +265,6 @@ class RotationCurveObject:
         
         # Rebin velocity arrays back to original grid size if oversampling was used
         self._rebin_velocity_arrays()
-
         
     def _perform_beam_smearing(self):
         r"""
@@ -388,9 +387,9 @@ class RotationCurveObject:
         """
         if rarray is not None:
             self.R_majoraxis = rarray
-            self.edge = np.max(rarray)
+            self.edge = np.max(np.abs(rarray))
             if len(rarray) > 1:
-                self.dx = np.diff(rarray)[0]
+                self.dx = np.median(np.diff(rarray))
         elif edge is not None:
             self.edge = edge
             if dx is None:
@@ -398,11 +397,18 @@ class RotationCurveObject:
                 self.dx = 0.1
             else:
                 self.dx = dx
-        elif self.galaxy is None:
-            raise ValueError("Must provide either 'rarray', 'edge', or 'galaxy' parameter")
+        elif self.galaxy is not None:
+            self.dx = self.galaxy.dx
+            self.edge = self.galaxy.edge
+        else:
+            raise ValueError("Rotation Curve:: Must provide either 'rarray', 'edge', or 'galaxy'")
 
         if self.oversample is None or self.oversample == 1:
-            self.R_majoraxis = create_r_space(edge=self.edge, resolution=self.dx)
+            self.R_majoraxis = (
+                create_r_space(edge=self.edge, resolution=self.dx)
+                if rarray is None
+                else self.R_majoraxis
+            )
         else:
             self.dx_original = self.dx
             self.R_majoraxis_original = create_r_space(edge=self.edge, resolution=self.dx)
@@ -729,7 +735,12 @@ class RotationCurveObject:
         
         # Recalculate fdm using rebinned arrays (don't rebin fdm itself)
         if hasattr(self, 'V2h') and hasattr(self, 'V2circ'):
-            self.fdm = np.nan_to_num(self.V2h / self.V2circ, nan=0.0)
+            self.fdm = np.nan_to_num(
+                np.divide(self.V2h, self.V2circ,
+                          out=np.zeros_like(self.V2circ),
+                          where=self.V2circ!=0)
+                , nan=0.0
+            )
 
     def _simple_average_rebin(self, array):
         """
@@ -793,7 +804,6 @@ class RotationCurveObject:
             # For higher dimensional arrays, return as-is with warning
             logger.warning(f"Cannot rebin array with {array.ndim} dimensions. Returning original.")
             return array
-        
 
     def _validate_rebinned_arrays(self):
         """
@@ -1298,8 +1308,12 @@ def calculate_fraction_at_re(mass_components=None, reval=None):
     >>> components = {'disk': disk, 'halo': halo, 'ring': None, 'bulge': None}
     >>> f_dm = calculate_fraction_at_re(mass_components=components, reval=5.0)
     """
+    if mass_components['halo'] is None:
+        print('Cant calculate DM fractions for a model with no halo!')
+        return 0.
+
     if reval is None:
-        print('reval not specified. Assuming reval = r_eff_disk...')
+        logger.warning('Rotation Curve: reval not specified. Assuming reval = r_eff_disk...')
         if mass_components['disk'] is not None:
             reval = mass_components['disk'].r_eff
         elif mass_components['ring'] is not None:
@@ -1308,12 +1322,8 @@ def calculate_fraction_at_re(mass_components=None, reval=None):
             print('No disk or ring component found to estimate reval. Returning 1 for fdm...')
             return 1.
 
-    if mass_components['halo'] is None:
-        print('Cant calculate DM fractions for a model with no halo!')
-        return 0.
-    else:
-        rc = RotationCurveObject(rarray=[reval], Halo=mass_components['halo'], Disk=mass_components['disk'],
-                                 Ring=mass_components['ring'], Bulge=mass_components['bulge'], sigma_dispersion=0.,
-                                 inclination=90., pressure_support='general', include_beam_smearing=False)
-        fraction = rc.V2h / (rc.V2h + rc.V2baryon)
-        return fraction[0]
+    rc = RotationCurveObject(rarray=[reval], Halo=mass_components['halo'], Disk=mass_components['disk'],
+                             Ring=mass_components['ring'], Bulge=mass_components['bulge'], sigma_dispersion=0.,
+                             inclination=90., pressure_support='general', include_beam_smearing=False)
+    fraction = rc.V2h / (rc.V2h + rc.V2baryon)
+    return fraction[0]

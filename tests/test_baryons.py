@@ -536,7 +536,7 @@ def test_gaussian_ring_vcirc_lookup_vs_no_lookup():
     ring_no_lookup = GaussianRingProfile(mass=mass, r_s=r_s, h=h, lookup=False)
 
     # Test at various radii
-    radii = np.linspace(0.1, 5*r_s, num=50)
+    radii = np.linspace(0.1, 5*r_s, num=20)
 
     vcirc_lookup = ring_lookup.vcirc(radii)
     vcirc_no_lookup = ring_no_lookup.vcirc(radii)

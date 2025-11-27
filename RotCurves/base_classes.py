@@ -6,6 +6,7 @@ import logging
 from RotCurves.base_utils import (
     integrate_quad_list,
     solve_numerical_using_brentq,
+    safe_sqrt
 )
 from RotCurves.const import (
     G_CONST,
@@ -475,7 +476,8 @@ class SurfaceDensityProfile:
         ndarray or float
             :math:`f_{v}(x)`.
         """
-        return np.sqrt(np.maximum(self.vcirc2_dimless(x), 0))
+        return safe_sqrt(self.vcirc2_dimless(x))
+        # return np.sqrt(np.maximum(self.vcirc2_dimless(x), 0))
 
     def vcirc(self, r):
         r"""
@@ -499,7 +501,7 @@ class SurfaceDensityProfile:
             return np.zeros_like(r)
         else:
             x = self._normalized_radius(r)
-            return self.vcirc_dimless(x) * self.scale_velocity
+            return self.vcirc_dimless(x) * self.scale_velocity * np.sign(r)
 
     def light_profile(self, r, r2=None):
         r"""
@@ -1011,7 +1013,7 @@ class DarkMatterHaloProfile:
             :math:`f_v(x) = \sqrt{f_v^2(x)}` with negative values clipped to zero
             before the square root to avoid NaNs.
         """
-        return np.sqrt(np.maximum(self._vcirc2_dimless(x), 0))
+        return safe_sqrt(self._vcirc2_dimless(x))
 
     def vcirc(self, r):
         r"""
@@ -1035,4 +1037,4 @@ class DarkMatterHaloProfile:
             return np.zeros_like(r)
         else:
             x = self._normalized_radius(r)
-            return self._vcirc_dimless(x) * self.scale_velocity
+            return self._vcirc_dimless(x) * self.scale_velocity * np.sign(r)
