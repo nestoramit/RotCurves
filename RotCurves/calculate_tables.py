@@ -60,7 +60,7 @@ def create_noordermeer_lookuptable(
         q_range,
         n_range,
         N=200,
-        tol=0.001,
+        tol=1e-4,
         printtime=False,
         overwrite=False,
         running_in_cluster=False
@@ -262,15 +262,16 @@ def create_GaussianRing_lookuptable(
 
 
 if __name__ == '__main__':
-    # create_noordermeer_lookuptable(
-    #     q_range=np.arange(0.0, 1.05, 0.05),
-    #     n_range=[0.5, 1.0, 2.0, 3.0, 4.0],
-    #     overwrite=False,
-    #     printtime=True,
-    # )
+    create_noordermeer_lookuptable(
+        q_range=[0.2],
+        n_range=[4.0],
+        N=1000,
+        overwrite=True,
+        printtime=True,
+    )
 
-    create_GaussianRing_lookuptable(h_range=np.arange(0.05, 0.5, 0.05))
-    create_GaussianRing_lookuptable(h_range=np.arange(0.5, 2.0, 0.05))
-    create_GaussianRing_lookuptable(h_range=np.arange(2.0, 5.0, 0.05))
-    create_GaussianRing_lookuptable(h_range=np.arange(5.0, 10.0, 0.10))
-    create_GaussianRing_lookuptable(h_range=np.arange(10.0, 20.0, 0.5))
+    # create_GaussianRing_lookuptable(h_range=np.arange(0.05, 0.5, 0.05))
+    # create_GaussianRing_lookuptable(h_range=np.arange(0.5, 2.0, 0.05))
+    # create_GaussianRing_lookuptable(h_range=np.arange(2.0, 5.0, 0.05))
+    # create_GaussianRing_lookuptable(h_range=np.arange(5.0, 10.0, 0.10))
+    # create_GaussianRing_lookuptable(h_range=np.arange(10.0, 20.0, 0.5))

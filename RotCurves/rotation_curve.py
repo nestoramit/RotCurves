@@ -10,6 +10,7 @@ from RotCurves.baryons import *
 from RotCurves.dm_halos import *
 from RotCurves.base_utils import (
     create_r_space,
+    create_r_space_oversampled,
     safe_sqrt,
     )
 
@@ -32,9 +33,21 @@ class RotationCurveObject:
 
        v_{\rm rot}^2(r) = v_{\rm circ}^2(r) + v_{\sigma}^2(r),
 
-    where :math:`v_{\rm circ}^2 = v_{\rm baryon}^2 + v_{\rm halo}^2` is the
-    circular velocity squared, and :math:`v_{\sigma}^2` is the pressure support
-    correction. The observed line-of-sight velocity is convolved over the PSF beam kernel:
+    where 
+    
+    .. math::
+    
+        v_{\rm circ}^2 = v_{\rm baryon}^2 + v_{\rm halo}^2
+        
+    is the circular velocity, and 
+    
+    .. math::
+    
+        v_{\sigma}^2 = 2 \sigma^2 \sum_{i} \frac{\mathrm{d}\ln\Sigma_i}{\mathrm{d}\ln r}
+        
+    is the pressure support correction (Burkert et al. 2010).
+    
+    The observed line-of-sight velocity is convolved over the PSF beam kernel:
 
     .. math::
 
@@ -42,18 +55,6 @@ class RotationCurveObject:
 
     where :math:`i` is the inclination angle and :math:`PSF` a circular
     Gaussian PSF beam kernel.
-
-    The pressure support correction accounts fact that gas velocity
-    dispersion (in most cases) reduces the observed rotation velocity below the circular
-    velocity (Burkert et al. 2010):
-
-    .. math::
-
-       v_{\sigma}^2 = 2 \sigma^2 \sum_{i} \frac{\mathrm{d}\ln\Sigma_i}{\mathrm{d}\ln r},
-    
-
-    where :math:`\sigma` is the velocity dispersion and the logarithmic slope
-    is computed from the sum of the disk and ring components surface densities.
 
     Parameters
     ----------
@@ -116,9 +117,6 @@ class RotationCurveObject:
     FWHM_beam : float, optional
         Full Width at Half Maximum of the Gaussian beam [kpc]. If provided,
         ``sigma_beam`` is calculated automatically.
-    apply_2D : bool, optional
-        If ``True``, compute 2D beam smearing on a spatial grid. If ``False``,
-        use 1D beam smearing along the major axis. Default is ``True``.
     include_beam_smearing : bool, optional
         If ``True``, apply beam smearing to the rotation curve. If ``False``,
         only compute the intrinsic (unsmeared) rotation curve. Default is
@@ -135,18 +133,18 @@ class RotationCurveObject:
     ----------
     R_majoraxis : ndarray
         Radial array along the major axis [kpc].
-    intrinsic : ndarray
+    Vrot : ndarray
         Intrinsic rotation velocity including pressure support [km/s].
-    intrinsic_with_inclination : ndarray
+    Vrot_sini : ndarray
         Intrinsic line-of-sight velocity [km/s].
-    intrinsic_no_dispersion : ndarray
+    Vcirc : ndarray
         Intrinsic rotation velocity without pressure support [km/s].
-    intrinsic_no_dispersion_with_inclination : ndarray
-        Intrinsic line-of-sight velocity without pressure support [km/s].
+    Vcirc_sini : ndarray
+        Intrinsic line-of-sight rotation velocity without pressure support [km/s].
     smeared : ndarray
-        Beam-smeared rotation velocity [km/s].
+        Beam-Vobs rotation velocity [km/s].
     smeared_with_inclination : ndarray
-        Beam-smeared line-of-sight velocity [km/s].
+        Beam-Vobs line-of-sight velocity [km/s].
     velocity_dispersion : ndarray
         Total velocity dispersion including beam smearing and instrumental
         effects [km/s].
@@ -163,10 +161,6 @@ class RotationCurveObject:
 
     Notes
     -----
-    
-
-    where :math:`\sigma` is the velocity dispersion and the logarithmic slope
-    is computed from the density profile.
 
     Beam smearing is implemented using a Gaussian convolution kernel that
     accounts for the finite spatial resolution of observations. The kernel
@@ -189,7 +183,7 @@ class RotationCurveObject:
     ...     edge=20.0, dx=0.1, Disk=disk, Halo=halo,
     ...     inclination=60, sigma_beam=0.5, include_beam_smearing=True
     ... )
-    >>> v_obs = rc.smeared_with_inclination  # Line-of-sight velocity
+    >>> v_obs = rc.Vobs_sini  # Line-of-sight velocity
     """
     def __init__(self,
                  galaxy=None,
@@ -210,14 +204,14 @@ class RotationCurveObject:
                  PA=0.,
                  sigma_beam=None,
                  FWHM_beam=None,
-                 apply_2D=True,
                  include_beam_smearing=True,
                  printtime=False,
                  ndim=1.,
                  radial_velocity=0):
         
         # Initialize timing if requested
-        if printtime:
+        self.printtime = printtime
+        if self.printtime:
             self.starttime = time.time()
         
         # Store all parameters directly
@@ -240,9 +234,8 @@ class RotationCurveObject:
         # Beam and sampling parameters
         self.sigma_beam = sigma_beam
         self.FWHM_beam = FWHM_beam
-        self.apply_2D = apply_2D
         self.include_beam_smearing = include_beam_smearing
-        self.oversample = oversample
+        self.oversample = int(oversample)
         self.oversample_edge = oversample_edge
         self.sigma_inst = sigma_inst
         
@@ -252,115 +245,91 @@ class RotationCurveObject:
         self._set_parameter_defaults()
         
         # Setup spatial grid
-        self._setup_spatial_grid(rarray, edge, dx)
-        
-        # Setup derived beam parameters
-        self._setup_derived_beam_parameters()
-        
-        # Keep the existing beam smearing calculation code unchanged
-        ### only calculate intrinsic RC
-        if not self.include_beam_smearing:
-            if self.inclination is None:
-                self.inclination = 90.
-                logger.warning("Rotation Curve: no inclination set, assuming inc=90 for the calculation.")
-            self.make_intrinsic_rotationCurve(self.R_majoraxis)
+        self._setup_grid_properties(rarray, edge, dx)
 
-        ### beam-smeared RC
+        self._calculate_velocities()
+
+        
+    def _calculate_velocities(self):
+        r"""
+        Calculate the intrinsic rotation curve and beam-smeared rotation curve.
+        """
+        if self.include_beam_smearing:
+            self._perform_beam_smearing()
         else:
             if self.inclination is None:
-                logger.warning("Rotation Curve: no inclination set, cannot perform beam smearing.")
-            ### do a 1D rotation curve ###
-            if not self.apply_2D:
-                # define the 1D radial spaces
-                self.sampling_edge = self.edge + self.oversample_edge * self.sigma_beam
-                self.oversample_pixels = int(round(self.oversample_edge * self.sigma_beam / self.dx))
-                self.sampling_rarray_1D = create_r_space(edge=self.sampling_edge, resolution=self.dx)
+                self.inclination = 90.
+                logger.warning(
+                    "Rotation Curve: no inclination set, taking inc=90 for the intrinsic rotation curve.")
+            self.make_intrinsic_rotationCurve(self.R_majoraxis)
+        
+        # Rebin velocity arrays back to original grid size if oversampling was used
+        self._rebin_velocity_arrays()
 
-                # create intrinsic RC for the sampling range
-                self.make_intrinsic_rotationCurve(self.sampling_rarray_1D)
+        
+    def _perform_beam_smearing(self):
+        r"""
+        Calculate beam-smeared rotation curves and velocity dispersion 
+        using the projected beam on the galactic plane.
+        """
+        if self.inclination is None:
+            logger.warning("Rotation Curve: no inclination set, cannot perform beam smearing.")
+            self.Vobs_sini = None
+            self.Vobs = None
+            self.velocity_dispersion = None
+            self.smeared_light_profile = None
+            return
 
-                # create beam-smeared RC along the major axis
-                self.smeared = self.apply_1D_beam_smearing(self.intrinsic)
-                self.smeared_with_inclination = self.apply_1D_beam_smearing(self.intrinsic_with_inclination)
-                self.smeared_no_dispersion = self.apply_1D_beam_smearing(self.intrinsic_no_dispersion)
-                self.smeared_no_dispersion_with_inclination = self.apply_1D_beam_smearing(self.intrinsic_no_dispersion_with_inclination)
+        # Setup derived parameters
+        self._setup_derived_beam_parameters()
+        self._setup_derived_grid_parameters()
 
-                # estimate velocity dispersion
-                V_average = self.smeared_with_inclination
-                V_sqaured = self.intrinsic_with_inclination ** 2
-                V_sqaured_average = self.apply_1D_beam_smearing(V_sqaured)
-                dispersion_squared = V_sqaured_average - V_average**2
-                self.velocity_dispersion = np.sqrt(dispersion_squared + self.sigma_profile ** 2)
+        # Create velocity array for 2D grid
+        self.make_intrinsic_rotationCurve(self.sampling_rarray_2D)
 
-                # choose major axis only from the intrinsic curves
-                N = len(self.intrinsic)
-                self.intrinsic = self.intrinsic[self.oversample_pixels:N-self.oversample_pixels]
-                self.intrinsic_with_inclination = self.intrinsic_with_inclination[self.oversample_pixels:N-self.oversample_pixels]
-                self.intrinsic_no_dispersion = self.intrinsic_no_dispersion[self.oversample_pixels:N-self.oversample_pixels]
-                self.intrinsic_no_dispersion_with_inclination = self.intrinsic_no_dispersion_with_inclination[self.oversample_pixels:N-self.oversample_pixels]
+        # Apply beam smearing for velocity and dispersion
+        self.Vobs_sini, self.smeared_light_profile = self.apply_2D_beam_smearing(
+            self.Vrot_sini, 
+            self.sampling_rarray_2D,
+            ndim=self.ndim
+        )
+        
+        self.Vobs = self.Vobs_sini / np.sin(np.deg2rad(self.inclination))
+        
+        V_squared_average, _ = self.apply_2D_beam_smearing(
+            self.Vrot_sini, 
+            self.sampling_rarray_2D, 
+            ndim=self.ndim, 
+            for_dispersion=True
+        )
 
-                if printtime:
-                        print('time for 1D:', np.round(time.time() - self.starttime, 1))
+        # Calculate velocity dispersion
+        dispersion_squared = V_squared_average - self.Vobs_sini ** 2
+        if self.ndim == 1:
+            dispersion_squared = dispersion_squared.flatten()
 
-            ### do a 2D rotation curve ###
-            if apply_2D:
-                geometrical_factor_elliptical = 1 / np.cos(np.deg2rad(self.inclination))
+        # Create rotation curves in original space
+        self.make_intrinsic_rotationCurve(self.R_majoraxis)
 
-                self.sigma_beam_x = self.sigma_beam
-                self.sigma_beam_y = self.sigma_beam * geometrical_factor_elliptical
-                self.sigma_beam_pixels_x = self.sigma_beam_x / self.dx
-                self.sigma_beam_pixels_y = self.sigma_beam_y / self.dx
-                self.oversample_edge_pixels_x = int(np.ceil(self.oversample_edge * self.sigma_beam_pixels_x))
-                self.oversample_edge_pixels_y = int(np.ceil(self.oversample_edge * self.sigma_beam_pixels_y))
-                self.sampling_edge_x = self.edge + self.oversample_edge_pixels_x * self.dx
-                self.sampling_edge_y = self.edge + self.oversample_edge_pixels_y * self.dx
-                self.sampling_rarray_x = create_r_space(edge=self.sampling_edge_x, resolution=self.dx)
-                self.sampling_rarray_y = create_r_space(edge=self.sampling_edge_y, resolution=self.dx)
-                self.sampling_edge_2D = np.sqrt(self.sampling_edge_x**2 + self.sampling_edge_y**2)
-                self.sampling_rarray_2D = create_r_space(edge=self.sampling_edge_2D, resolution=self.dx)
+        self.velocity_dispersion = safe_sqrt(
+            dispersion_squared + self.sigma_profile ** 2 + self.sigma_inst ** 2
+        )
 
-                # create the velocity array used to build the 2D grid from
-                self.make_intrinsic_rotationCurve(self.sampling_rarray_2D)
+        # Apply rotation for 2D output
+        if self.ndim == 2.:
+            for arr in [self.Vobs_sini, self.velocity_dispersion]:
+                arr[:] = rotate(arr, angle=90 - self.PA, reshape=False)
 
-                # create the beam-smeared rotation curve along the major axis
-                self.smeared_with_inclination, self.smeared_light_profile = self.apply_2D_beam_smearing(
-                    one_dimensional_vel=self.intrinsic_with_inclination,
-                    one_dimensional_rarray=self.sampling_rarray_2D,
-                    ndim=self.ndim
-                )
-                self.smeared = self.smeared_with_inclination / np.sin(np.deg2rad(self.inclination))
-                V_average = self.smeared_with_inclination
-                V_squared = self.intrinsic_with_inclination ** 2
-                # V_squared_average, _ = self.apply_2D_beam_smearing(one_dimensional_vel=V_squared,
-                #                                                 one_dimensional_rarray=self.sampling_rarray_2D,
-                #                                                 ndim=self.ndim, for_dispersion=True)
-                V_squared_average, _ = self.apply_2D_beam_smearing(one_dimensional_vel=self.intrinsic_with_inclination,
-                                                                one_dimensional_rarray=self.sampling_rarray_2D,
-                                                                ndim=self.ndim, for_dispersion=True)
-                dispersion_squared = V_squared_average - V_average ** 2
-                if self.ndim == 1:
-                    dispersion_squared = dispersion_squared.flatten()
+        # Clean up small values and reshape for 1D
+        arrays_to_clean = [self.Vobs_sini, self.Vobs, self.velocity_dispersion]
+        for arr in arrays_to_clean:
+            arr[np.abs(arr) < 1e-4] = 0
+            if self.ndim == 1:
+                arr[:] = np.reshape(arr, len(arr))
 
-                # create the intrinsic curves in the original space
-                self.make_intrinsic_rotationCurve(self.R_majoraxis)
-
-                self.velocity_dispersion = np.sqrt(dispersion_squared + self.sigma_profile ** 2 + self.sigma_inst ** 2)
-
-                if self.ndim == 2.:
-                    self.smeared_with_inclination = rotate(self.smeared_with_inclination, angle=90-self.PA, reshape=False)
-                    self.velocity_dispersion = rotate(self.velocity_dispersion, angle=90-self.PA, reshape=False)
-
-                self.smeared_with_inclination = np.round(self.smeared_with_inclination, 4)
-                self.smeared = np.round(self.smeared, 4)
-                self.velocity_dispersion = np.round(self.velocity_dispersion, 4)
-
-                if self.ndim == 1:
-                    self.smeared_with_inclination = np.reshape(self.smeared_with_inclination, len(self.smeared_with_inclination))
-                    self.smeared = np.reshape(self.smeared, len(self.smeared))
-                    self.velocity_dispersion = np.reshape(self.velocity_dispersion, len(self.velocity_dispersion))
-
-                if printtime:
-                    print('time for 2D:', np. round(time.time() - self.starttime, 1))
+        if self.printtime:
+            runtime = (time.time() - self.starttime) * 1e-9
+            print(f"runtime: {runtime:.2e} sec")
 
     def _process_beam_conversion(self):
         """Convert FWHM to sigma if needed."""
@@ -377,14 +346,46 @@ class RotationCurveObject:
 
     def _set_parameter_defaults(self):
         """Set default values for parameters that might be None."""
-        if self.sigma_inst is None:
+        if self.sigma_inst is None or not hasattr(self, 'sigma_inst'):
             self.sigma_inst = 0
         
-        if self.oversample_edge is None:
+        if self.oversample_edge is None or not hasattr(self, 'oversample_edge'):
             self.oversample_edge = 4
 
-    def _setup_spatial_grid(self, rarray, edge, dx):
-        """Setup the spatial grid for calculations."""
+        if self.oversample is None or not hasattr(self, 'oversample'):
+            self.oversample = 1
+
+    def _setup_grid_properties(self, rarray, edge, dx):
+        """
+        Setup the spatial grid for calculations.
+        
+        Parameters
+        ----------
+        rarray : array_like or None
+            Custom radial array [kpc]. If provided, ``edge`` and ``dx`` are
+            inferred from this array.
+        edge : float or None
+            Maximum radius [kpc]. Used if ``rarray`` is None.
+        dx : float or None
+            Spatial resolution [kpc]. Used if ``rarray`` is None. default is 0.1 kpc.
+            
+        Notes
+        -----
+        The method handles three initialization modes:
+        
+        1. If ``rarray`` is provided, uses it directly and infers ``edge`` and ``dx``.
+        2. If ``edge`` is provided, uses it with ``dx`` (defaulting to 0.1 kpc).
+        3. If neither is provided, requires a ``galaxy`` object.
+        
+        The method also applies oversampling to the pixel scale and creates
+        the radial array if not already set.
+        
+        Raises
+        ------
+        ValueError
+            If neither ``rarray``, ``edge``, nor ``galaxy`` is provided, or if
+            the radial array cannot be created due to missing parameters.
+        """
         if rarray is not None:
             self.R_majoraxis = rarray
             self.edge = np.max(rarray)
@@ -399,22 +400,73 @@ class RotationCurveObject:
                 self.dx = dx
         elif self.galaxy is None:
             raise ValueError("Must provide either 'rarray', 'edge', or 'galaxy' parameter")
-        
-        # Apply oversampling to pixel scale
-        if hasattr(self, 'dx') and self.dx is not None:
+
+        if self.oversample is None or self.oversample == 1:
+            self.R_majoraxis = create_r_space(edge=self.edge, resolution=self.dx)
+        else:
+            self.dx_original = self.dx
+            self.R_majoraxis_original = create_r_space(edge=self.edge, resolution=self.dx)
+            self.original_array_size = len(self.R_majoraxis_original)
             self.dx = self.dx / self.oversample
+            self.R_majoraxis = create_r_space_oversampled(
+                edge=self.edge, resolution=self.dx, oversample=self.oversample
+                )
+
+    def _setup_derived_grid_parameters(self):
+        """
+        Setup derived grid parameters for 2D beam smearing.
         
-        # Create radial array if not already set from rarray
-        if not hasattr(self, 'R_majoraxis'):
-            if hasattr(self, 'edge') and hasattr(self, 'dx'):
-                self.R_majoraxis = create_r_space(edge=self.edge, resolution=self.dx)
-            else:
-                raise ValueError("Cannot create radial array: missing 'edge' or 'dx' parameters")
+        Notes
+        -----
+        Calculates the following derived parameters:
+        
+        - ``oversample_edge_pixels_x/y``: Oversampling pixels in x/y directions
+        - ``sampling_edge_x/y``: Extended sampling edges in x/y directions
+        - ``sampling_rarray_x/y``: Extended radial arrays in x/y directions
+        - ``sampling_edge_2D``: Combined 2D sampling edge
+        - ``sampling_rarray_2D``: Combined 2D radial array
+        
+        These parameters define the extended grid used for beam smearing
+        calculations to avoid edge effects.
+        """
+        self.oversample_edge_pixels_x = int(np.ceil(self.oversample_edge * self.sigma_beam_pixels_x))
+        self.oversample_edge_pixels_y = int(np.ceil(self.oversample_edge * self.sigma_beam_pixels_y))
+        self.sampling_edge_x = self.edge + self.oversample_edge_pixels_x * self.dx
+        self.sampling_edge_y = self.edge + self.oversample_edge_pixels_y * self.dx
+        self.sampling_edge_2D = np.sqrt(self.sampling_edge_x ** 2 + self.sampling_edge_y ** 2)
+        self.sampling_rarray_x = create_r_space_oversampled(
+            edge=self.sampling_edge_x, resolution=self.dx, oversample=self.oversample
+            )
+        self.sampling_rarray_y = create_r_space_oversampled(
+            edge=self.sampling_edge_y, resolution=self.dx, oversample=self.oversample
+            )
+        self.sampling_rarray_2D = create_r_space_oversampled(
+            edge=self.sampling_edge_2D, resolution=self.dx, oversample=self.oversample
+            )
 
     def _setup_derived_beam_parameters(self):
-        """Setup parameters derived from beam settings."""
-        if self.sigma_beam is not None and hasattr(self, 'dx') and self.dx is not None:
-            self.sigma_beam_pixels = round(self.sigma_beam / self.dx)
+        r"""
+        Setup parameters derived from beam settings.
+        
+        Notes
+        -----
+        Calculates beam parameters accounting for inclination effects:
+        
+        - ``sigma_beam_x``: Beam size along x-axis (unchanged)
+        - ``sigma_beam_y``: Beam size along y-axis (corrected for inclination)
+        - ``sigma_beam_pixels_x/y``: Beam sizes in pixel units
+        
+        The y-direction beam size is corrected for inclination using:
+        :math:`\sigma_y = \sigma / \cos(i)` to account for the elliptical
+        projection of the circular beam onto the inclined galactic plane.
+        """
+        if self.sigma_beam is not None and self.inclination is not None:
+            self.sigma_beam_x = self.sigma_beam
+            self.sigma_beam_y = self.sigma_beam / np.cos(np.deg2rad(self.inclination))
+
+        if self.dx is not None:
+            self.sigma_beam_pixels_x = self.sigma_beam_x / self.dx
+            self.sigma_beam_pixels_y = self.sigma_beam_y / self.dx
 
     def get_dispersion_profile(self, R_array, functional_form='const'):
         r"""
@@ -470,11 +522,48 @@ class RotationCurveObject:
         self.sigma_profile = self.sigma0 * self.dispersion_func(R_array)
 
     def _get_constant_dispersion(self, r):
-        """Helper for constant dispersion."""
+        """
+        Helper function for constant velocity dispersion profile.
+        
+        Parameters
+        ----------
+        r : array_like
+            Radial array [kpc].
+            
+        Returns
+        -------
+        ndarray
+            Array of ones with the same shape as input.
+        """
         return np.ones_like(r)
 
     def _get_surface_density_dispersion(self, r):
-        """Helper for surface density-based dispersion."""
+        r"""
+        Helper function for a self-gravitating disk in hydrostatic equilibrium
+        with constant scale height (Spitzer 1942), where the velocity dispersion 
+        is proportional to the square root of the surface density.
+        
+        .. math::
+        
+            \sigma(r) \propto \sqrt{\Sigma(r)}        
+        
+        Parameters
+        ----------
+        r : array_like
+            Radial array [kpc].
+            
+        Returns
+        -------
+        ndarray
+            Dispersion scaling factor proportional to square root of
+            surface density: :math:`\sqrt{\Sigma(r) / \Sigma_0}`.
+            
+        Notes
+        -----
+        Uses the first available component (disk or ring) to calculate
+        the surface density scaling. If no components are found, logs
+        a warning and returns a constant dispersion.
+        """
         for component in [self.disk, self.ring]:
             if component is not None:
                 return np.sqrt(component.surface_density_dimless(
@@ -487,7 +576,29 @@ class RotationCurveObject:
         return np.ones_like(r)
 
     def _get_power_law_dispersion(self, r):
-        """Helper for power-law dispersion."""
+        r"""
+        Helper function for power-law velocity dispersion profile
+
+        .. math::
+        
+            \sigma(r) \propto \left( \frac{r}{r_s} \right)^{-\alpha}
+        
+        Parameters
+        ----------
+        r : array_like
+            Radial array [kpc].
+            
+        Returns
+        -------
+        ndarray
+            Power-law dispersion scaling.
+            
+        Notes
+        -----
+        Uses the disk scale radius :math:`r_s` for the power-law form.
+        If no disk component is found, logs a warning and returns
+        constant dispersion.
+        """
         if self.disk is not None:
             return np.divide(1, 1 + (np.divide(np.abs(r), self.disk.r_s, 
                                               out=np.zeros_like(r), where=r!=0)))
@@ -496,9 +607,223 @@ class RotationCurveObject:
             "Using constant dispersion.")
         return np.ones_like(r)
 
+    def calculate_pressure_support(self, R_array):
+        """
+        Calculate pressure support correction term V²_sigma.
+        
+        Parameters
+        ----------
+        R_array : array_like
+            Radial array [kpc].
+            
+        Returns
+        -------
+        ndarray
+            Pressure support velocity squared [km²/s²].
+        """
+        V2sigma = np.zeros_like(R_array)
+        
+        if self.pressure_support in ['exponential', 'Exponential']:
+            V2sigma = self._calculate_pressure_support_exponential(R_array)
+        elif self.pressure_support in ['general', 'General', 'Generalized', 'generalized', 
+                                       'burkert', 'burkert10', 'Burkert', 'Burkert10']:
+            V2sigma = self._calculate_pressure_support_general(R_array)
+            
+        return np.nan_to_num(V2sigma)
+    
+    def _calculate_pressure_support_exponential(self, R_array):
+        r"""
+        Calculate exponential pressure support correction for an exponential disk:
+
+        .. math::
+
+            v_{\sigma}^2(r) = - 3.36 \frac{r}{r_{\rm eff}} \sigma^2(r),
+        
+        Uses the exponential profile approximation with effective radius scaling.
+        
+        Parameters
+        ----------
+        R_array : array_like
+            Radial array [kpc].
+            
+        Returns
+        -------
+        ndarray
+            Exponential pressure support correction [:math:`km^2/s^2`].
+        """
+        # Determine effective radius
+        if self.disk is None:
+            logger.warning('PRESSURE SUPPORT: exponential: No disk component found. Skipping pressure support...')
+            return np.zeros_like(R_array)
+
+        return - 3.36 * (R_array / self.disk.r_eff) * self.sigma_profile ** 2
+    
+    def _calculate_pressure_support_general(self, R_array):
+        r"""
+        Calculate general (Burkert 2010) pressure support correction:
+        
+        .. math::
+
+            v_{\sigma}^2(r) = 2 \sigma^2(r) \frac{\mathrm{d}\ln\Sigma}{\mathrm{d}\ln r} (r),
+
+        
+        Parameters
+        ----------
+        R_array : array_like
+            Radial array [kpc].
+            
+        Returns
+        -------
+        ndarray
+            General pressure support velocity squared [km²/s²].
+        """
+        V2sigma = np.zeros_like(R_array)
+        
+        for comp in [self.disk, self.ring]:
+            if comp is not None and comp._is_massive():
+                V2sigma = (V2sigma + 
+                           2 * self.sigma_profile ** 2 * comp.dlnrho_dlnr(np.abs(R_array)))
+                
+        return V2sigma
+
+    def _rebin_velocity_arrays(self):
+        """
+        Rebin high-resolution velocity arrays back to original grid size.
+        
+        This method is called when ``oversample > 1`` to reduce the high-resolution
+        velocity arrays back to the original grid size using simple averaging.
+        
+        Notes
+        -----
+        The method uses simple averaging where each group of ``oversample``
+        consecutive points is averaged to produce one output point. 
+        The final array sizes match the original pixel size.
+        """
+        # Skip rebinning if oversample == 1
+        if self.oversample == 1:
+            return
+            
+        # List of velocity arrays to rebin
+        velocity_arrays = [
+            'Vd', 'Vb', 'Vh', 'Vr', 'Vbaryon',
+            'V2d', 'V2b', 'V2h', 'V2r', 'V2baryon',
+            'Vcirc', 'Vrot', 'Vcirc_sini', 'Vrot_sini',
+            'V2circ', 'V2rot', 'V2sigma', 'Vsigma',
+            'velocity_dispersion', 'sigma_profile',
+            'Vobs', 'Vobs_sini'
+        ]
+        
+        # Rebin each array
+        for arr_name in velocity_arrays:
+            if hasattr(self, arr_name):
+                array = getattr(self, arr_name)
+                if array is not None:
+                    rebinned_array = self._simple_average_rebin(array)
+                    setattr(self, arr_name, rebinned_array)
+        
+        # Update R_majoraxis to original grid
+        self.R_majoraxis = self.R_majoraxis_original.copy()
+        
+        # Validate array sizes
+        self._validate_rebinned_arrays()
+        
+        # Recalculate fdm using rebinned arrays (don't rebin fdm itself)
+        if hasattr(self, 'V2h') and hasattr(self, 'V2circ'):
+            self.fdm = np.nan_to_num(self.V2h / self.V2circ, nan=0.0)
+
+    def _simple_average_rebin(self, array):
+        """
+        Perform simple averaging rebinning of an array.
+        
+        This method assumes that the input array length is always perfectly
+        divisible by the oversample factor, which is guaranteed by the new
+        oversampled grid construction method.
+        
+        Parameters
+        ----------
+        array : ndarray
+            Input array to rebin.
+            
+        Returns
+        -------
+        ndarray
+            Rebinned array with original size.
+            
+        Raises
+        ------
+        ValueError
+            If array length is not divisible by oversample factor.
+        """
+        if array is None:
+            return None
+            
+        # Handle 1D arrays
+        if array.ndim == 1:
+            expected_length = self.original_array_size * self.oversample
+            if len(array) != expected_length:
+                raise ValueError(
+                    f"Oversample: Array length {len(array)} is different than the" 
+                    "expected (original length {self.original_array_size}, oversample: {self.oversample}).")
+            
+            array_binned = np.mean(
+                array.reshape(self.original_array_size, self.oversample),
+                axis=1
+            )
+            array_binned = np.where(np.abs(array_binned) < 1e-4, 0.0, array_binned)
+
+            return array_binned
+        
+        # Handle 2D arrays (for ndim=2 case)
+        elif array.ndim == 2:
+            n_points_x, n_points_y = array.shape
+            n_output = self.original_array_size
+            oversample_factor = int(self.oversample)
+            
+            expected_length = n_output * oversample_factor
+            if n_points_x != expected_length or n_points_y != expected_length:
+                raise ValueError(f"Array shape ({n_points_x}, {n_points_y}) is not compatible with oversample factor {oversample_factor}. "
+                               f"Expected shape: ({expected_length}, {expected_length}). This should not happen with the new grid construction.")
+            
+            # Reshape and average
+            reshaped = array.reshape(n_output, oversample_factor, 
+                                   n_output, oversample_factor)
+            return np.mean(reshaped, axis=(1, 3))
+        
+        else:
+            # For higher dimensional arrays, return as-is with warning
+            logger.warning(f"Cannot rebin array with {array.ndim} dimensions. Returning original.")
+            return array
+        
+
+    def _validate_rebinned_arrays(self):
+        """
+        Validate that rebinned arrays have the correct size.
+        
+        Raises
+        ------
+        Warning
+            If any rebinned array doesn't match the expected original size.
+        """
+        expected_size = self.original_array_size
+        
+        # Check R_majoraxis first
+        if len(self.R_majoraxis) != expected_size:
+            logger.warning(f"R_majoraxis size {len(self.R_majoraxis)} doesn't match "
+                           f"expected original size {expected_size}")
+        
+        # Check a few key arrays
+        key_arrays = ['Vcirc', 'Vrot']
+        for arr_name in key_arrays:
+            if hasattr(self, arr_name):
+                array = getattr(self, arr_name)
+                if array is not None and hasattr(array, '__len__'):
+                    if len(array) != expected_size:
+                        raise ValueError(f"{arr_name} size {len(array)} doesn't match "
+                                       f"expected original size {expected_size}")
+
     def make_intrinsic_rotationCurve(self, R_array):
         r"""
-        Calculate the intrinsic (unsmeared) rotation curve.
+        Calculate the Vrot (unsmeared) rotation curve.
 
         Computes the rotation curve from all mass components (disk, ring, bulge,
         halo) and applies pressure support corrections. The method calculates:
@@ -537,11 +862,11 @@ class RotationCurveObject:
         where :math:`r_e` is the effective radius.
 
         This method stores multiple velocity arrays:
-        - ``intrinsic``: Rotation velocity with pressure support
-        - ``intrinsic_no_dispersion``: Circular velocity without pressure support
-        - ``intrinsic_with_inclination``: Line-of-sight velocity with pressure support
-        - ``intrinsic_no_dispersion_with_inclination``: Line-of-sight velocity without pressure support
-
+        - ``Vcirc``: Circular velocity without pressure support (km/s).
+        - ``Vcirc_sini``: Line-of-sight velocity without pressure support (km/s).
+        - ``Vrot``: Rotation velocity with pressure support (km/s).
+        - ``Vrot_sini``: Line-of-sight velocity with pressure support (km/s).
+        
         The dark matter fraction :math:`f_{\rm DM} = v_{\rm halo}^2 / v_{\rm circ}^2`
         is also computed and stored in ``self.fdm``.
         """
@@ -567,101 +892,247 @@ class RotationCurveObject:
                 setattr(self, v_attr, component.vcirc(R_array))
         
         self.get_dispersion_profile(R_array, functional_form=self.dispersion_function)
-        self.V2sigma = np.zeros_like(absR)
-        ### Regular exponential profile (using re)
-        if self.pressure_support in ['exponential', 'Exponential']:
-            if self.disk is not None:
-                re = self.disk.r_eff
-            elif self.ring is not None:
-                re = self.ring.rpeak
-            else:
-                logger.warning('PRESSURE SUPPORT: exponential: No disk or rings component found, assuming Re=1 kpc...')
-                re = 1.
-            self.V2sigma += 3.36 * (R_array / re) * self.sigma_profile ** 2
+        # self.V2sigma = np.zeros_like(absR)
+        # ### Regular exponential profile (using re)
+        # if self.pressure_support in ['exponential', 'Exponential']:
+        #     if self.disk is not None:
+        #         re = self.disk.r_eff
+        #     elif self.ring is not None:
+        #         re = self.ring.rpeak
+        #     else:
+        #         logger.warning('PRESSURE SUPPORT: exponential: No disk or rings component found, assuming Re=1 kpc...')
+        #         re = 1.
+        #     self.V2sigma += 3.36 * (R_array / re) * self.sigma_profile ** 2
 
-        ### General Burkert(2010) formula using analytical derivatives of density profiles
-        elif self.pressure_support in ['general', 'General', 'Generalized', 'generalized', 'burkert', 'burkert10', 'Burkert', 'Burkert10']:
-            for comp in [self.disk, self.ring]:
-                if comp is not None:
-                    if comp._is_massive():
-                        # self.V2sigma += 2 * self.sigma_profile ** 2 * (absR/comp.r_s) * comp.dlnrho_dlnr(absR)
-                        self.V2sigma = (self.V2sigma +
-                                        2 * self.sigma_profile ** 2 * comp.dlnrho_dlnr(absR))
-
-        self.V2sigma = np.nan_to_num(self.V2sigma)
+        # self.V2sigma = np.nan_to_num(self.V2sigma)
+        self.V2sigma = self.calculate_pressure_support(R_array)
         self.Vsigma = safe_sqrt(self.V2sigma, sign_array=R_array)
-        # self.Vsigma = np.sqrt(np.abs(self.V2sigma)) * np.sign(self.V2sigma)
 
         self.V2baryon = self.V2d + self.V2b + self.V2r
         self.Vbaryon = safe_sqrt(self.V2baryon, sign_array=R_array)
-        # self.Vbaryon = np.sqrt(np.maximum(0, self.V2baryon)) * np.sign(R_array)
 
         self.V2circ = self.V2baryon + self.V2h
-        # self.Vcirc = np.sqrt(np.maximum(0, self.V2circ)) * np.sign(R_array)
         self.Vcirc = safe_sqrt(self.V2circ, sign_array=R_array)
 
         self.V2rot = self.V2circ + self.V2sigma
-        # self.Vrot = np.sqrt(np.maximum(0, self.V2rot)) * np.sign(R_array)
         self.Vrot = safe_sqrt(self.V2rot, sign_array=R_array)
 
-        ### final velocities
-        self.intrinsic_no_dispersion = self.Vcirc
-        self.intrinsic_no_dispersion_with_inclination = self.intrinsic_no_dispersion * np.sin(np.deg2rad(self.inclination))
-        self.intrinsic = self.Vrot
-        self.intrinsic_with_inclination = self.intrinsic * np.sin(np.deg2rad(self.inclination))
+        # add inclination
+        self.Vcirc_sini = self.Vcirc * np.sin(np.deg2rad(self.inclination))
+        self.Vrot = self.Vrot
+        self.Vrot_sini = self.Vrot * np.sin(np.deg2rad(self.inclination))
         self.velocity_dispersion = self.sigma_profile
 
         self.fdm = np.nan_to_num(self.V2h / self.V2circ, nan=0.0)
 
-    def apply_1D_beam_smearing(self, velocity_array, truncate=4.0, mode="nearest"):
-        r"""
-        \texttt{Deprecated. Use apply_2D_beam_smearing instead.}
-        Apply 1D Gaussian beam smearing along the major axis.
-
-        Convolves the velocity array with a 1D Gaussian kernel to simulate
-        the effect of finite spatial resolution. The kernel has standard
-        deviation :math:`\sigma_{\rm beam}` in pixel units.
-
+    def _build_velocity_grid(self, one_dimensional_vel, one_dimensional_rarray, for_dispersion=False):
+        """
+        Build 2D velocity grid from 1D rotation curve.
+        
         Parameters
         ----------
-        velocity_array : array_like
-            Input velocity array [km/s] to be smeared. Should be sampled on
-            the extended radial grid (``sampling_rarray_1D``).
-        truncate : float, optional
-            Truncation distance for the Gaussian kernel in units of standard
-            deviation. The kernel is truncated at :math:`\pm \mathrm{truncate}
-            \times \sigma_{\rm beam}`. Default is 4.0.
-        mode : str, optional
-            Edge handling mode for the convolution. Options are ``'nearest'``,
-            ``'constant'``, ``'reflect'``, ``'mirror'``, or ``'wrap'``.
-            Default is ``'nearest'``.
-
+        one_dimensional_vel : array_like
+            Input 1D velocity array [km/s].
+        one_dimensional_rarray : array_like
+            Radial array [kpc] corresponding to velocity.
+        for_dispersion : bool, optional
+            If True, square the velocity for dispersion calculations.
+            
         Returns
         -------
-        ndarray
-            Beam-smeared velocity array [km/s] on the original radial grid
-            (``R_majoraxis``). The output is cropped to remove the oversampled
-            edge regions.
-
-        Notes
-        -----
-        The beam smearing is applied using a 1D Gaussian filter:
-
-        .. math::
-
-           v_{\rm smeared}(r) = \int v(r') G(r - r'; \sigma_{\rm beam}) \, dr',
-
-        where :math:`G` is a Gaussian kernel with standard deviation
-        :math:`\sigma_{\rm beam}`. The convolution is performed using
-        ``scipy.ndimage.gaussian_filter1d``.
-
-        The input array should be sampled on an extended grid that includes
-        ``oversample_edge * sigma_beam`` beyond the original edge to avoid
-        edge effects. The output is cropped to match the original radial grid.
+        Vgrid : ndarray
+            2D velocity grid with line-of-sight projection applied.
+        rgrid : ndarray
+            2D radial distance grid.
         """
-        smeared = gaussian_filter1d(velocity_array, self.sigma_beam_pixels, truncate=truncate, mode=mode)
-        N = len(smeared)
-        return smeared[self.oversample_pixels: N - self.oversample_pixels]
+        # Build 2D grid from the size of the input 1D array
+        xx, yy = np.meshgrid(self.sampling_rarray_x, self.sampling_rarray_y)
+        rgrid = np.sqrt(xx ** 2 + yy ** 2)
+
+        # Interpolate 1D velocity onto 2D grid
+        interpolator = CubicSpline(x=one_dimensional_rarray, y=one_dimensional_vel)
+        Vgrid = interpolator(rgrid)
+
+        # Calculate cos/sin theta grids for projection
+        costhetha_grid = np.divide(xx, rgrid, out=np.zeros_like(rgrid), where=rgrid!=0)
+        sinthetha_grid = np.divide(yy, rgrid, out=np.zeros_like(rgrid), where=rgrid!=0)
+
+        # Project on line-of-sight velocity
+        Vgrid *= costhetha_grid
+
+        # Add radial flow
+        Vgrid += self.Vradial * np.sin(np.deg2rad(self.inclination)) * sinthetha_grid
+
+        # Square velocity if calculating dispersion
+        if for_dispersion:
+            Vgrid = Vgrid**2
+            
+        return Vgrid, rgrid
+
+    def _build_light_grid(self, xx, yy, rgrid):
+        """
+        Build 2D light weighting grid from baryonic components.
+        
+        Parameters
+        ----------
+        xx, yy : ndarray
+            2D coordinate grids.
+        rgrid : ndarray
+            2D radial distance grid.
+            
+        Returns
+        -------
+        Igrid : ndarray
+            Combined light profile grid for weighting.
+        """
+        Igrid = np.zeros_like(rgrid)
+
+        for comp in [self.disk, self.ring, self.bulge]:
+            if comp is not None:
+                Igrid += comp.light_profile(xx, yy)
+
+        # Check that Igrid is non-zero
+        if np.all(Igrid == 0):
+            logger.warning('No light weighting used. Assuming constant light...')
+            Igrid = np.ones_like(rgrid)
+            
+        return Igrid
+
+    def _build_gaussian_kernel(self):
+        """
+        Build normalized elliptical Gaussian kernel for beam smearing.
+        
+        Returns
+        -------
+        gaussian_kernel : ndarray
+            Normalized 2D Gaussian kernel.
+        """
+        # Create kernel coordinate arrays
+        kernel_x = np.arange(-self.oversample_edge_pixels_x, self.oversample_edge_pixels_x + 1)
+        kernel_y = np.arange(-self.oversample_edge_pixels_y, self.oversample_edge_pixels_y + 1)
+        kernel_xx, kernel_yy = np.meshgrid(kernel_x, kernel_y)
+
+        # Calculate elliptical Gaussian kernel
+        gaussian_kernel = 1.
+        gaussian_kernel *= np.exp(-(kernel_xx ** 2 / (2 * self.sigma_beam_pixels_x ** 2)))
+        gaussian_kernel *= np.exp(-(kernel_yy ** 2 / (2 * self.sigma_beam_pixels_y ** 2)))
+        
+        # Normalize kernel to sum to 1
+        gaussian_kernel /= np.sum(gaussian_kernel)
+        
+        return gaussian_kernel
+
+    def _apply_beam_smearing_1d(self, Vgrid, Igrid, gaussian_kernel, rgrid):
+        """
+        Apply beam smearing for 1D major axis extraction.
+        
+        Parameters
+        ----------
+        Vgrid : ndarray
+            2D velocity grid.
+        Igrid : ndarray
+            2D light grid.
+        gaussian_kernel : ndarray
+            Gaussian convolution kernel.
+        rgrid : ndarray
+            2D radial distance grid.
+            
+        Returns
+        -------
+        V_major_axis : ndarray
+            Beam-Vobs velocity along major axis.
+        smeared_light_major_axis : ndarray
+            Beam-Vobs light profile along major axis.
+        """
+        majoraxis_idx = int((rgrid.shape[0] - 1) / 2)
+        majoraxis = rgrid[majoraxis_idx]
+        N = len(majoraxis)
+
+        V_major_axis = []
+        smeared_light_major_axis = []
+        
+        for idx in range(self.oversample_edge_pixels_x, N - self.oversample_edge_pixels_x):
+            # Kernel shape
+            kernel_h, kernel_w = gaussian_kernel.shape
+
+            # When slicing from the grid, always extract a patch of the same shape
+            half_h = kernel_h // 2
+            half_w = kernel_w // 2
+
+            # For a point at (y, x) in the grid:
+            y_min = majoraxis_idx - half_h
+            y_max = majoraxis_idx + half_h + 1
+            x_min = idx - half_w
+            x_max = idx + half_w + 1
+
+            Vgrid_idx = Vgrid[y_min:y_max, x_min:x_max]
+            Igrid_idx = Igrid[y_min:y_max, x_min:x_max]
+
+            # Calculate weighted velocity
+            weights = Igrid_idx * gaussian_kernel
+            numerator = np.nansum(Vgrid_idx * weights)
+            denominator = np.nansum(weights)
+            V_major_axis_idx = np.divide(numerator, denominator, out=np.zeros_like(denominator), where=denominator!=0)
+            V_major_axis.append(V_major_axis_idx)
+
+            # Calculate Vobs light profile
+            numerator = np.nansum(Igrid_idx * gaussian_kernel)
+            denominator = np.nansum(gaussian_kernel)
+            smeared_light_major_axis_idx = np.divide(numerator, denominator, out=np.zeros_like(denominator), where=denominator!=0)
+            smeared_light_major_axis.append(smeared_light_major_axis_idx)
+
+        # Clean up NaN values
+        V_major_axis = np.array(V_major_axis)
+        V_major_axis = np.nan_to_num(V_major_axis)
+
+        smeared_light_major_axis = np.array(smeared_light_major_axis)
+        smeared_light_major_axis = np.nan_to_num(smeared_light_major_axis)
+
+        return V_major_axis, smeared_light_major_axis
+
+    def _apply_beam_smearing_2d(self, Vgrid, Igrid, gaussian_kernel):
+        """
+        Apply beam smearing for full 2D output.
+        
+        Parameters
+        ----------
+        Vgrid : ndarray
+            2D velocity grid.
+        Igrid : ndarray
+            2D light grid.
+        gaussian_kernel : ndarray
+            Gaussian convolution kernel.
+            
+        Returns
+        -------
+        V2d_array : ndarray
+            Full 2D beam-smeared velocity field.
+        Igrid_cleaned : ndarray
+            Cleaned light grid.
+        """
+        V2d_array = np.zeros(shape=(len(self.R_majoraxis), len(self.R_majoraxis)))
+
+        for idx in range(self.oversample_edge_pixels_y, len(self.sampling_rarray_y) - self.oversample_edge_pixels_y):
+            V2d_array_idx = np.zeros(shape=len(self.R_majoraxis))
+
+            for j in range(self.oversample_edge_pixels_x, len(self.sampling_rarray_x) - self.oversample_edge_pixels_x):
+                y_min = idx - self.oversample_edge_pixels_y
+                y_max = idx + self.oversample_edge_pixels_y + 1
+                x_min = j - self.oversample_edge_pixels_x
+                x_max = j + self.oversample_edge_pixels_x + 1
+
+                Vgrid_idx = Vgrid[y_min:y_max, x_min:x_max]
+                Igrid_idx = Igrid[y_min:y_max, x_min:x_max]
+                V2d_array_idx_j = np.divide(np.sum(Vgrid_idx * Igrid_idx * gaussian_kernel), np.sum(Igrid_idx * gaussian_kernel), out=np.zeros(shape=(1)), where=np.sum(Igrid_idx*gaussian_kernel)!=0)
+                V2d_array_idx[j - self.oversample_edge_pixels_x] = (V2d_array_idx_j)
+
+            V2d_array[idx - self.oversample_edge_pixels_y] = V2d_array_idx
+
+        # Clean up light grid
+        Igrid_cleaned = np.asarray(Igrid)
+        Igrid_cleaned = np.nan_to_num(Igrid_cleaned)
+
+        return V2d_array, Igrid_cleaned
 
     def apply_2D_beam_smearing(self, one_dimensional_vel, one_dimensional_rarray, for_dispersion=False, ndim=None):
         r"""
@@ -692,11 +1163,11 @@ class RotationCurveObject:
         Returns
         -------
         V_smeared : ndarray
-            Beam-smeared velocity array [km/s]. Shape depends on ``ndim``:
+            Beam-Vobs velocity array [km/s]. Shape depends on ``ndim``:
             - If ``ndim=1``: 1D array along the major axis
             - If ``ndim=2``: 2D array of shape ``(len(R_majoraxis), len(R_majoraxis))``
         I_smeared : ndarray
-            Beam-smeared light profile (same shape as ``V_smeared``). Used
+            Beam-Vobs light profile (same shape as ``V_smeared``). Used
             for visualization and normalization purposes.
 
         Notes
@@ -724,7 +1195,7 @@ class RotationCurveObject:
 
         6. **Weighted averaging**: At each point, compute the light-weighted
            average velocity:
-           :math:`v_{\rm smeared} = \sum (v \times I \times G) / \sum (I \times G)`
+           :math:`v_{\rm Vobs} = \sum (v \times I \times G) / \sum (I \times G)`
 
         The elliptical beam accounts for the fact that an inclined disk appears
         elongated along the minor axis. The kernel size is determined by
@@ -733,131 +1204,41 @@ class RotationCurveObject:
         If no light profile is available (all components have zero mass), a
         uniform light distribution is assumed with a warning.
         """
-
+        # Handle parameter defaults
         if ndim is None:
             ndim = self.ndim
 
-        # build 2D grid from the size of the input 1D array
-        xx, yy = np.meshgrid(self.sampling_rarray_x, self.sampling_rarray_y)
-        rgrid = np.sqrt(xx ** 2 + yy ** 2)
-
-        interpolator = CubicSpline(x=one_dimensional_rarray, y=one_dimensional_vel)
-        Vgrid = interpolator(rgrid)
-
-        costhetha_grid = np.divide(xx, rgrid, out=np.zeros_like(rgrid), where=rgrid!=0)
-        sinthetha_grid = np.divide(yy, rgrid, out=np.zeros_like(rgrid), where=rgrid!=0)
-
-        # project on LOS velocity
-        Vgrid *= costhetha_grid
-
-        # Add radial flow
-        Vgrid += self.Vradial * np.sin(np.deg2rad(self.inclination)) * sinthetha_grid
-
-        if for_dispersion:
-            Vgrid = Vgrid**2
-
-        # apply light weighting filter
-        Igrid = np.zeros_like(rgrid)
-        if self.disk is not None:
-            Igrid += self.disk.light_profile(xx, yy)
-        if self.ring is not None:
-            Igrid += self.ring.light_profile(xx, yy)
-        if self.bulge is not None:
-            Igrid += self.bulge.light_profile(xx, yy)
-
-        # Check that Igrid is non-zero
-        if np.all(Igrid == 0):
-            logger.warning('No light weighting used. Assuming constant light...')
-            Igrid = np.ones_like(rgrid)
-
-        # normalize Igrid in case of really low values
-        # Igrid /= np.max(Igrid)
-
-        kernel_x = np.arange(-self.oversample_edge_pixels_x, self.oversample_edge_pixels_x + 1)
-        kernel_y = np.arange(-self.oversample_edge_pixels_y, self.oversample_edge_pixels_y + 1)
-        kernel_xx, kernel_yy = np.meshgrid(kernel_x, kernel_y)
-
-        gaussian_kernel = 1.
-        gaussian_kernel *= np.exp(-(kernel_xx ** 2 / (2 * self.sigma_beam_pixels_x ** 2)))
-        gaussian_kernel *= np.exp(-(kernel_yy ** 2 / (2 * self.sigma_beam_pixels_y ** 2)))
-        gaussian_kernel /= np.sum(gaussian_kernel)
-
+        Vgrid, rgrid = self._build_velocity_grid(
+            one_dimensional_vel, 
+            one_dimensional_rarray, 
+            for_dispersion
+        )
+        xx, yy = np.meshgrid(
+            self.sampling_rarray_x, 
+            self.sampling_rarray_y
+        )
+        Igrid = self._build_light_grid(
+            xx, 
+            yy, 
+            rgrid
+        )
+        gaussian_kernel = self._build_gaussian_kernel()
+        
         if ndim == 1:
-            majoraxis_idx = int((rgrid.shape[0] - 1) / 2)
-            majoraxis = rgrid[majoraxis_idx]
-            N = len(majoraxis)
-
-            V_major_axis = []
-            smeared_light_major_axis = []
-            for idx in range(self.oversample_edge_pixels_x, N - self.oversample_edge_pixels_x):
-                # y_min = majoraxis_idx - self.oversample_edge_pixels_y
-                # y_max = majoraxis_idx + self.oversample_edge_pixels_y + 1
-                # x_min = idx - self.oversample_edge_pixels_x
-                # x_max = idx + self.oversample_edge_pixels_x + 1
-
-                # Kernel shape
-                kernel_h, kernel_w = gaussian_kernel.shape
-
-                # When slicing from the grid, always extract a patch of the same shape
-                half_h = kernel_h // 2
-                half_w = kernel_w // 2
-
-                # For a point at (y, x) in the grid:
-                y_min = majoraxis_idx - half_h
-                y_max = majoraxis_idx + half_h + 1
-                x_min = idx - half_w
-                x_max = idx + half_w + 1
-
-                Vgrid_idx = Vgrid[y_min:y_max, x_min:x_max]
-                Igrid_idx = Igrid[y_min:y_max, x_min:x_max]
-
-                weights = Igrid_idx * gaussian_kernel
-                numerator = np.nansum(Vgrid_idx * weights)
-                denominator = np.nansum(weights)
-                V_major_axis_idx = np.divide(numerator, denominator, out=np.zeros_like(denominator), where=denominator!=0)
-                V_major_axis.append(V_major_axis_idx)
-
-                numerator = np.nansum(Igrid_idx * gaussian_kernel)
-                denominator = np.nansum(gaussian_kernel)
-                smeared_light_major_axis_idx = np.divide(numerator, denominator, out=np.zeros_like(denominator), where=denominator!=0)
-                smeared_light_major_axis.append(smeared_light_major_axis_idx)
-
-            # make sure velocity array has no Nans
-            V_major_axis = np.array(V_major_axis)
-            V_major_axis = np.nan_to_num(V_major_axis)
-
-            # normalize light profile
-            smeared_light_major_axis = np.array(smeared_light_major_axis)
-            smeared_light_major_axis = np.nan_to_num(smeared_light_major_axis)
-            # smeared_light_major_axis /= np.max(smeared_light_major_axis)
-
-            return V_major_axis, smeared_light_major_axis
-
+            return self._apply_beam_smearing_1d(
+                Vgrid, 
+                Igrid, 
+                gaussian_kernel, 
+                rgrid
+            )
         elif ndim == 2.:
-            V2d_array = np.zeros(shape=(len(self.R_majoraxis), len(self.R_majoraxis)))
+            return self._apply_beam_smearing_2d(
+                Vgrid, 
+                Igrid,
+                gaussian_kernel
+            )
 
-            for idx in range(self.oversample_edge_pixels_y, len(self.sampling_rarray_y) - self.oversample_edge_pixels_y):
-                V2d_array_idx = np.zeros(shape=len(self.R_majoraxis))
-
-                for j in range(self.oversample_edge_pixels_x, len(self.sampling_rarray_x) - self.oversample_edge_pixels_x):
-                    y_min = idx - self.oversample_edge_pixels_y
-                    y_max = idx + self.oversample_edge_pixels_y + 1
-                    x_min = j - self.oversample_edge_pixels_x
-                    x_max = j + self.oversample_edge_pixels_x + 1
-
-                    Vgrid_idx = Vgrid[y_min:y_max, x_min:x_max]
-                    Igrid_idx = Igrid[y_min:y_max, x_min:x_max]
-                    V2d_array_idx_j = np.divide(np.sum(Vgrid_idx * Igrid_idx * gaussian_kernel), np.sum(Igrid_idx * gaussian_kernel), out=np.zeros(shape=(1)), where=np.sum(Igrid_idx*gaussian_kernel)!=0)
-                    V2d_array_idx[j - self.oversample_edge_pixels_x] = (V2d_array_idx_j)
-
-                V2d_array[idx - self.oversample_edge_pixels_y] = V2d_array_idx
-
-                Igrid = np.asarray(Igrid)
-                Igrid = np.nan_to_num(Igrid)
-
-            return V2d_array, Igrid
-
-
+    
 def calculate_fraction_at_re(mass_components=None, reval=None):
     r"""
     Calculate the dark matter fraction at a specified radius.
@@ -933,6 +1314,6 @@ def calculate_fraction_at_re(mass_components=None, reval=None):
     else:
         rc = RotationCurveObject(rarray=[reval], Halo=mass_components['halo'], Disk=mass_components['disk'],
                                  Ring=mass_components['ring'], Bulge=mass_components['bulge'], sigma_dispersion=0.,
-                                 pressure_support='general', apply_2D=False, include_beam_smearing=False)
+                                 inclination=90., pressure_support='general', include_beam_smearing=False)
         fraction = rc.V2h / (rc.V2h + rc.V2baryon)
         return fraction[0]

@@ -127,6 +127,75 @@ def create_r_space(edge, resolution):
 
     return R
 
+def create_r_space_oversampled(edge, resolution, oversample):
+        """
+        Create a radial space array that ensures perfect divisibility by oversample factor.
+        
+        This method modifies the standard create_r_space behavior to ensure that
+        the resulting array length is always divisible by the oversample factor,
+        eliminating the need for interpolation during rebinning.
+        
+        Parameters
+        ----------
+        edge : float
+            Maximum radius for the array [kpc].
+        resolution : float
+            Spatial resolution (pixel size) [kpc].
+        oversample : int
+            Oversampling factor.
+            
+        Returns
+        -------
+        ndarray
+            Radial array with length divisible by oversample factor.
+            
+        Notes
+        -----
+        For even oversample factors:
+            - Expands the lower edge by oversample/2 points
+            - Shifts the entire array by oversample*dx/2 to maintain symmetry
+            
+        For odd oversample factors:
+            - Expands both edges by floor(oversample/2) points
+            - Maintains symmetry around the original array
+        """
+        
+        # Create the original array to understand the target structure
+        original_array = create_r_space(edge=edge, resolution=resolution)
+        original_length = len(original_array)
+        
+        if oversample == 1:
+            # No oversampling, use standard function
+            return original_array
+                
+        if oversample % 2 == 0:
+            # Even oversample: expand lower edge and shift
+            lower_points = oversample // 2
+            lower_edge = - (edge + resolution * lower_points) 
+            
+            upper_points = oversample // 3
+            upper_edge = edge + resolution * upper_points
+            R = np.arange(start=lower_edge, stop=upper_edge+resolution, step=resolution)
+
+            shift = resolution / 2
+            R = R + shift
+            return R
+                        
+        else:
+            # Odd oversample: expand both edges symmetrically
+            lower_points = upper_points = oversample // 2
+            lower_edge = - (edge + resolution * lower_points) 
+            upper_edge = edge + resolution * upper_points
+            R = np.arange(start=lower_edge, stop=upper_edge+resolution, step=resolution)
+
+            return R
+        
+        # Verify the result is divisible by oversample
+        if len(R) % oversample != 0:
+            logger.warning(f"Created array length {len(R)} is not divisible by oversample {oversample}")
+        
+        return R
+
 def safe_sqrt(squared, sign_array=None):
     sgn = np.sign(sign_array) if sign_array is not None else 1.
     return np.sqrt(np.maximum(0, squared)) * sgn

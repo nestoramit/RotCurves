@@ -505,13 +505,13 @@ def test_gaussian_ring_initialization_errors():
 def test_sersic_vcirc_lookup_vs_no_lookup():
     """Test that SersicProfile vcirc is the same with or without lookup tables."""
     mass = 1e9
-    r_s = 3.0
+    r_eff = 3.0
     n, q0 = get_random_sersic_params()
+
+    prof_lookup = SersicProfile(mass=mass, r_eff=r_eff, n=n, q0=q0, lookup=True)
+    prof_no_lookup = SersicProfile(mass=mass, r_eff=r_eff, n=n, q0=q0, lookup=False)
     
-    prof_lookup = SersicProfile(mass=mass, r_s=r_s, n=n, q0=q0, lookup=True)
-    prof_no_lookup = SersicProfile(mass=mass, r_s=r_s, n=n, q0=q0, lookup=False)
-    
-    radii = np.linspace(0.1, 5*r_s, num=50)
+    radii = np.linspace(0.1, 5*r_eff, num=50)
     
     vcirc_lookup = prof_lookup.vcirc(radii)
     vcirc_no_lookup = prof_no_lookup.vcirc(radii)

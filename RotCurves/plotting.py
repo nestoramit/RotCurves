@@ -1,7 +1,21 @@
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
+import seaborn
 
+COLORS_LIST = seaborn.color_palette('deep', n_colors=10)
+COLORS = {
+    'blue': COLORS_LIST[0],
+    'orange': COLORS_LIST[1],
+    'green': COLORS_LIST[2],
+    'red': COLORS_LIST[3],
+    'purple': COLORS_LIST[4],
+    'brown': COLORS_LIST[5],
+    'pink': COLORS_LIST[6],
+    'grey': COLORS_LIST[7],
+    'beige': COLORS_LIST[8],
+    'teal': COLORS_LIST[9],
+}
 
 def make_pretty_plot(dpi=600):
     """

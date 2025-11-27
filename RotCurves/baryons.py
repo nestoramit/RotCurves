@@ -41,7 +41,7 @@ class SersicProfile(SurfaceDensityProfile):
 
     where :math:`\gamma(a, z)` is the lower incomplete gamma function.
 
-    The circular velocity is computed considering an intrinsic thickness with axis ratio :math:`q_0` 
+    The circular velocity is computed considering an Vrot thickness with axis ratio :math:`q_0`
     (Noordermeer et al. 2008). By default, lookup tables are used for the circular velocity calculation 
     for the closest (n, q0) values.
 
@@ -364,6 +364,7 @@ class SersicProfile(SurfaceDensityProfile):
             for i in range(len(x_eff)):
                 v2[i] = single_noordermeer_calculation(i, self.q0, self.n, x_eff)
             return v2[0] if np.isscalar(x) else v2
+
     def dlnrho_dlnr(self, r):
         r"""
         Logarithmic slope of the surface density profile at radius ``r``.
