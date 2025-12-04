@@ -6,11 +6,12 @@ import logging
 from RotCurves.base_utils import (
     integrate_quad_list,
     solve_numerical_using_brentq,
-    safe_sqrt
+    safe_sqrt,
+    safe_round_to_zero,
 )
 from RotCurves.const import (
     G_CONST,
-    COSMOLOGY
+    COSMOLOGY,
 )
 
 
@@ -178,7 +179,10 @@ class SurfaceDensityProfile:
 
     def _normalized_radius(self, r):
         """Return the dimensionless radius :math:`x = |r| / r_s`."""
-        return np.abs(r) / self.r_s
+        x = np.abs(r) / self.r_s
+        x = safe_round_to_zero(x)
+        # x[np.abs(x) < 1e-10] = 0.0
+        return x
 
     def _calculate_scale_radius_from_effective(self):
         r"""
@@ -375,6 +379,8 @@ class SurfaceDensityProfile:
             :math:`f_{M}(<x)`.
         """
         mass = integrate_quad_list(lambda t: t * self.surface_density_dimless(t), 0, x)
+        # mass[np.abs(mass) < 1e-10] = 0.0
+        mass = safe_round_to_zero(mass)
         return mass
 
     def menc(self, r):
@@ -848,7 +854,10 @@ class DarkMatterHaloProfile:
 
     def _normalized_radius(self, r):
         """Return the dimensionless radius :math:`x = |r|/r_s`."""
-        return np.abs(r) / self.r_s
+        x = np.abs(r) / self.r_s
+        x = safe_round_to_zero(x)
+        # x[np.abs(x) < 1e-10] = 0.0
+        return x
 
     def _is_massive(self):
         """
@@ -935,6 +944,8 @@ class DarkMatterHaloProfile:
             :math:`f_M(<x)`, shape compatible with ``np.atleast_1d(x)``.
         """
         mass = integrate_quad_list(lambda t: 3 * t ** 2 * self._density_dimless(t), 0, x)
+        mass = safe_round_to_zero(mass)
+        # mass[mass < 1e-10] = 0.0
         return mass
 
     def menc(self, r):

@@ -101,11 +101,8 @@ def create_components(
 
     Notes
     -----
-    Mass ratios (BT, DT) are automatically clipped to the range [0.01, 0.99] to avoid
+    Mass ratios (BT, DT) are automatically clipped to the range [0, 1] to avoid
     numerical issues. The ring-to-total ratio (RT) is calculated as RT = 1 - BT - DT.
-
-    For Dekel-Zhao halos, the parameters 'beta' and 'gamma' are ignored. Use 'g' and 'b'
-    parameters directly when calling halo_selector (not implemented in this function).
     """
 
     halo = None
@@ -114,17 +111,12 @@ def create_components(
     bulge = None
 
     # Clip mass ratios to valid range, handling None values
-    BT = np.clip(BT, 1e-3, 1-1e-3) if BT is not None else None
-    DT = np.clip(DT, 1e-3, 1-1e-3) if DT is not None else None
-
-    # Calculate mass ratios (RT = ring-to-total)
-    # Handle None values properly
-    BT = BT if BT is not None else 0.0
-    DT = DT if DT is not None else 0.0
+    BT = np.clip(BT, 0., 1.) if BT is not None else 0.0
+    DT = np.clip(DT, 0., 1.) if DT is not None else 0.0
 
     if include_disk:
         if include_ring:
-            RT = 1 - BT - DT
+            RT = np.clip(1 - BT - DT, 0., 1.)
         else:
             RT = 0.
             if BT is None:
@@ -181,10 +173,10 @@ def create_components(
             raise ValueError("logM_baryon must be provided when include_disk=True")
         if disk_re is None:
             raise ValueError("disk_re must be provided when include_disk=True")
-        if DT is None or DT <= 0:
+        if DT is None or DT < 0:
             raise ValueError("DT must be provided and > 0 when include_disk=True")
         
-        logM_disk = logM_baryon + np.log10(DT)
+        logM_disk = logM_baryon + np.log10(DT) if DT > 0 else -np.inf
         disk = SersicProfile(mass=np.power(10, logM_disk),
                             r_eff=disk_re,
                             n=disk_n,
@@ -204,11 +196,11 @@ def create_components(
             raise ValueError("ring_rpeak must be provided when include_ring=True")
         if ring_FWHM is None:
             raise ValueError("ring_FWHM must be provided when include_ring=True")
-        if RT <= 0:
+        if RT < 0:
             raise ValueError("Ring-to-total ratio RT must be > 0 when include_ring=True. "
                            f"Current RT={RT:.3f} (BT={BT:.3f}, DT={DT:.3f})")
         
-        logM_ring = logM_baryon + np.log10(RT)
+        logM_ring = logM_baryon + np.log10(RT) if RT > 0 else -np.inf
         ring = GaussianRingProfile(mass=np.power(10, logM_ring),
                                   r_s=ring_rpeak,
                                   FWHM_ring=ring_FWHM,
@@ -225,10 +217,10 @@ def create_components(
     if include_bulge:
         if logM_baryon is None:
             raise ValueError("logM_baryon must be provided when include_bulge=True")
-        if BT is None or BT <= 0:
+        if BT is None or BT < 0:
             raise ValueError("BT must be provided and > 0 when include_bulge=True")
         
-        logM_bulge = logM_baryon + np.log10(BT)
+        logM_bulge = logM_baryon + np.log10(BT) if BT > 0 else -np.inf
         bulge = SersicProfile(mass=np.power(10, logM_bulge),
                              r_eff=1.,
                              n=bulge_n,

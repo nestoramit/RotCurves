@@ -199,4 +199,10 @@ def create_r_space_oversampled(edge, resolution, oversample):
 def safe_sqrt(squared, sign_array=None):
     sgn = np.sign(sign_array) if sign_array is not None else 1.
     return np.sqrt(np.maximum(0, squared)) * sgn
-    
+
+def safe_round_to_zero(array, atol=1e-10):
+    if np.isscalar(array):
+        return 0. if np.isclose(array, 0., atol=atol) else array
+    else:
+        array[np.isclose(array, 0., atol=atol)] = 0.
+        return array

@@ -711,3 +711,4 @@ def test_oversample_vs_higher_resolution():
     assert_allclose(rc_oversampled.Vobs, rc_higher_resolution.Vobs[::2], rtol=rtol, atol=atol)
     assert_allclose(rc_oversampled.Vobs_sini, rc_higher_resolution.Vobs_sini[::2], rtol=rtol, atol=atol)
     assert_allclose(rc_oversampled.velocity_dispersion, rc_higher_resolution.velocity_dispersion[::2], rtol=rtol, atol=atol)
+

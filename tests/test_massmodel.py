@@ -269,8 +269,8 @@ def test_create_components_mass_ratio_clipping():
         include_ring=False,
         include_bulge=True,
         logM_baryon=10.0,
-        DT=1.5,  # Should be clipped to 1-1e-2
-        BT=-0.1,  # Should be clipped to 1e-2
+        DT=1.5,  # Should be clipped to 1
+        BT=-0.1,  # Should be clipped to 0
         disk_re=5.0,
         disk_n=1.0,
         disk_q=0.2,

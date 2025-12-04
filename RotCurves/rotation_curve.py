@@ -12,7 +12,8 @@ from RotCurves.base_utils import (
     create_r_space,
     create_r_space_oversampled,
     safe_sqrt,
-    )
+    safe_round_to_zero,
+)
 
 # Define the logger
 logging.basicConfig(level=logging.INFO)
@@ -292,9 +293,11 @@ class RotationCurveObject:
             self.sampling_rarray_2D,
             ndim=self.ndim
         )
-        
         self.Vobs = self.Vobs_sini / np.sin(np.deg2rad(self.inclination))
-        
+
+        self.Vobs_sini = safe_round_to_zero(self.Vobs_sini, atol=1e-2)
+        self.Vobs = safe_round_to_zero(self.Vobs, atol=1e-2)
+
         V_squared_average, _ = self.apply_2D_beam_smearing(
             self.Vrot_sini, 
             self.sampling_rarray_2D, 
@@ -721,11 +724,15 @@ class RotationCurveObject:
         
         # Rebin each array
         for arr_name in velocity_arrays:
+            if arr_name == 'Vh':
+                print("here")
             if hasattr(self, arr_name):
                 array = getattr(self, arr_name)
                 if array is not None:
                     rebinned_array = self._simple_average_rebin(array)
+                    rebinned_array = safe_round_to_zero(rebinned_array, atol=1e-2)
                     setattr(self, arr_name, rebinned_array)
+
         
         # Update R_majoraxis to original grid
         self.R_majoraxis = self.R_majoraxis_original.copy()
