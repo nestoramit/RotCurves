@@ -4,6 +4,53 @@ from time import time_ns
 from RotCurves.base_classes import DarkMatterHaloProfile
 from scipy.special import hyp2f1, gamma, gammainc
 
+def halo_selector(component_type, **kwargs):
+    """
+    Factory function to create dark matter halo profile instances based on the specified type.
+
+    Parameters
+    ----------
+    component_type : str
+        Type of dark matter halo profile to create. Options are:
+        'NFW', 'alpha-NFW', 'Burkert', 'Einasto', 'Dekel-Zhao'.
+    **kwargs : dict
+        Additional keyword arguments to pass to the halo profile constructor.
+
+    Returns
+    -------
+    DarkMatterHaloProfile
+        An instance of the specified dark matter halo profile.
+
+    Raises
+    ------
+    ValueError
+        If an unsupported halo type is provided.
+
+    Examples
+    --------
+    Create an NFW halo:
+
+    >>> halo = halo_selector('NFW',mass=1e12,concentration=10,z=0)
+
+    Create a Burkert halo:
+
+    >>> halo = halo_selector('Burkert',mass=1e12,concentration=10,z=0)
+    """
+    component_type = component_type.lower()
+    if component_type in ['nfw']:
+        return NFWHalo(**kwargs)
+    elif component_type in ['alpha-nfw', 'alpha_nfw', 'alphanfw']:
+        return alhpaNFWHalo(**kwargs)
+    elif component_type in ['burkert']:
+        return BurkertHalo(**kwargs)
+    elif component_type in ['einasto']:
+        return EinastoHalo(**kwargs)
+    elif component_type in ['dekel-zhao', 'dekel_zhao', 'dekelzhao', 'dz']:
+        return DekelZhaoHalo(**kwargs)
+    else:
+        raise ValueError(f"Unsupported halo type: {component_type}. Supported types are: "
+                         "'NFW', 'alpha-NFW', 'Burkert', 'Einasto', 'Dekel-Zhao'.")
+
 class NFWHalo(DarkMatterHaloProfile):
     r"""
     Navarro-Frenk-White (NFW) dark matter halo profile (Navarro et al. 1995).
@@ -131,7 +178,6 @@ class NFWHalo(DarkMatterHaloProfile):
             Dimensionless enclosed mass :math:`f_M(<x)`.
         """
         return 3 * (np.log(1 + x) - x / (1 + x))
-
 
 class alhpaNFWHalo(DarkMatterHaloProfile):
     r"""
@@ -553,11 +599,11 @@ class DekelZhaoHalo(DarkMatterHaloProfile):
     alpha : float, optional
         Inner slope parameter :math:`\alpha` of the density profile. The inner
         region has :math:`\rho \propto r^{-\alpha}`. Default is 1.0.
-    g : float, optional
-        Outer slope parameter :math:`g` of the density profile. The outer region
-        has :math:`\rho \propto r^{-g}`. Default is 3.5.
-    b : float, optional
-        Transition parameter :math:`b` that controls the sharpness of the transition
+    gamma : float, optional
+        Outer slope parameter :math:`gamma` of the density profile. The outer region
+        has :math:`\rho \propto r^{-gamma}`. Default is 3.5.
+    beta : float, optional
+        Transition parameter :math:`beta` that controls the sharpness of the transition
         between inner and outer regions. Higher values correspond to sharper
         transitions. Default is 2.0.
     r_vir : float, optional
@@ -576,9 +622,9 @@ class DekelZhaoHalo(DarkMatterHaloProfile):
     Notes
     -----
     The Dekel-Zhao profile is a generalization of several commonly used profiles:
-    - When :math:`\alpha = 1`, :math:`g = 3`, and :math:`b = 1`, it reduces to NFW
+    - When :math:`\alpha = 1`, :math:`gamma = 3`, and :math:`beta = 1`, it reduces to NFW
     - When :math:`\alpha = 0`, it produces a cored profile
-    - When :math:`b \to \infty`, it approaches a double power-law with a sharp break
+    - When :math:`beta \to \infty`, it approaches a double power-law with a sharp break
 
     The profile provides excellent fits to dark matter halos in cosmological
     simulations and can accommodate a wide range of density profiles.
@@ -590,18 +636,29 @@ class DekelZhaoHalo(DarkMatterHaloProfile):
 
     Examples
     --------
-    Create a Dekel-Zhao halo with inner slope :math:`\alpha = 0.5` and outer slope :math:`g = 3.5`:
+    Create a Dekel-Zhao halo with inner slope :math:`\alpha = 0.5` and outer slope :math:`gamma = 3.5`:
 
-    >>> halo = DekelZhaoHalo(mass=1e12, concentration=10, alpha=0.5, g=3.5, b=2.0, z=0)
+    >>> halo = DekelZhaoHalo(mass=1e12, concentration=10, alpha=0.5, gamma=3.5, beta=2.0, z=0)
     >>> r = 10.0  # kpc
     >>> rho = halo.density(r)      # ρ(r)
     >>> m_r = halo.menc(r)         # M(<r)
     """
-    def __init__(self, z=0.0, mass=1e12, concentration=10, virial_overdensity=200., alpha=1., g=3.5, b=2.,
-                 r_vir=None, r_s=None, scale_density=None, adiabatic_contraction=False):
+    def __init__(self, 
+            z=0.0, 
+            mass=1e12, 
+            concentration=10, 
+            virial_overdensity=200., 
+            alpha=1., 
+            gamma=3.5, 
+            beta=2.,
+            r_vir=None, 
+            r_s=None, 
+            scale_density=None, 
+            adiabatic_contraction=False
+        ):
         self.alpha = alpha
-        self.g = g
-        self.b = b
+        self.gamma = gamma
+        self.beta = beta
 
         super().__init__(mass=mass, concentration=concentration, z=z, virial_overdensity=virial_overdensity,
                          r_vir=r_vir, r_s=r_s, scale_density=scale_density,
@@ -614,11 +671,11 @@ class DekelZhaoHalo(DarkMatterHaloProfile):
 
         .. math::
 
-           f_\rho(x) = \frac{3-\alpha}{\alpha}\left[1 + \frac{3-g}{3-\alpha}x^{1/b}\right]
-                       \left[x^\alpha(1+x^{1/b})^{1+b(g-\alpha)}\right]^{-1},
+           f_\rho(x) = \frac{3-\alpha}{\alpha}\left[1 + \frac{3-gamma}{3-\alpha}x^{1/beta}\right]
+                       \left[x^\alpha(1+x^{1/beta})^{1+beta(gamma-\alpha)}\right]^{-1},
 
         where :math:`x = r/r_s` is the dimensionless radius, :math:`\alpha` is
-        the inner slope, :math:`g` is the outer slope, and :math:`b` controls
+        the inner slope, :math:`gamma` is the outer slope, and :math:`beta` controls
         the transition sharpness.
 
         Parameters
@@ -631,8 +688,8 @@ class DekelZhaoHalo(DarkMatterHaloProfile):
         ndarray or float
             Dimensionless density :math:`f_\rho(x)`.
         """
-        p1 = (3-self.alpha)/self.alpha * (1 + (3-self.g)/(3-self.alpha)*x**(1/self.b))
-        p2 = (x**self.alpha * (1 + x**(1/self.b))**(1+self.b*(self.g-self.alpha)) )**-1
+        p1 = (3-self.alpha)/self.alpha * (1 + (3-self.gamma)/(3-self.alpha)*x**(1/self.beta))
+        p2 = (x**self.alpha * (1 + x**(1/self.beta))**(1+self.beta*(self.gamma-self.alpha)) )**-1
         return p1*p2
 
     def _menc_dimless(self, x):
@@ -641,7 +698,7 @@ class DekelZhaoHalo(DarkMatterHaloProfile):
 
         .. math::
 
-           f_M(<x) = x^3 \left[x^\alpha(1+x^{1/b})^{1+b(g-\alpha)}\right]^{-1}.
+           f_M(<x) = x^3 \left[x^\alpha(1+x^{1/beta})^{1+beta(gamma-\alpha)}\right]^{-1}.
 
         Parameters
         ----------
@@ -653,7 +710,7 @@ class DekelZhaoHalo(DarkMatterHaloProfile):
         ndarray
             Dimensionless enclosed mass :math:`f_M(<x)`.
         """
-        return x**3 * (x**self.alpha * (1 + x**(1/self.b))**(1+self.b*(self.g-self.alpha)) )**-1
+        return x**3 * (x**self.alpha * (1 + x**(1/self.beta))**(1+self.beta*(self.gamma-self.alpha)) )**-1
 
 if __name__ == '__main__':
     import matplotlib.pyplot as plt

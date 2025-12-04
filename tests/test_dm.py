@@ -25,7 +25,7 @@ def test_all_halos_match_input_mass():
         (alhpaNFWHalo, {"alpha": 0.7}),
         (BurkertHalo, {}),
         (EinastoHalo, {"n": 4.0}),
-        (DekelZhaoHalo, {"alpha": 0.6, "g": 3.2, "b": 1.8}),
+        (DekelZhaoHalo, {"alpha": 0.6, "gamma": 3.2, "beta": 1.8}),
     ]
     mass = 5e10
     concentration = 8

@@ -19,6 +19,46 @@ NoordermeerLookupTables = load_noor_lookuptables()
 GaussianRingLookupTables, GaussianRingBTminLookupTables = load_gaussian_tables()
 
 
+def baryon_selector(component_type, **kwargs):
+    r"""
+    Select and return the baryonic component class based on the specified type.
+
+    Parameters
+    ----------
+    component_type : str
+        Type of baryonic component. Options are:
+        - 'sersic': Sérsic surface-density profile.
+        - 'freeman_disk': Exponential disk surface-density profile.
+        - 'gaussian_ring': Gaussian ring surface-density profile.
+
+    Returns
+    -------
+    class
+        Corresponding baryonic component class.
+
+    Raises
+    ------
+    ValueError
+        If an unknown component type is provided.
+
+    Examples
+    --------
+    >>> component_class = baryon_selector('sersic')
+    >>> print(component_class)
+    <class 'RotCurves.baryons.SersicProfile'>
+    """
+
+    component_type = component_type.lower()
+    if component_type in ['sersic']:
+        return SersicProfile(**kwargs)
+    elif component_type in ['freeman', 'exponential', 'freeman_disk', 'exponential_disk']:
+        return FreemanDisk(**kwargs)
+    elif component_type in ['gaussian_ring', 'ring']:
+        return GaussianRingProfile(**kwargs)
+    else:
+        raise ValueError(f"Unsupported baryon type: {component_type}. Supported types are: "
+                         "'Sersic', 'Freeman', 'Gaussian_Ring'.")
+
 class SersicProfile(SurfaceDensityProfile):
     r"""
     Sérsic surface-density profile for galactic components (Sérsic 1968).

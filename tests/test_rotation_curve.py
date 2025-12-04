@@ -589,6 +589,7 @@ def test_oversample_rebinning_consistency_odd():
     assert_allclose(rc_normal.Vobs_sini, rc_oversampled.Vobs_sini, rtol=rtol, atol=atol)
     assert_allclose(rc_normal.velocity_dispersion, rc_oversampled.velocity_dispersion, rtol=rtol, atol=atol)
 
+
 def test_oversampled_grid_divisibility():
     """Test that oversampled grids are always divisible by oversample factor."""
     disk = FreemanDisk(mass=1e10, r_s=2.0)
