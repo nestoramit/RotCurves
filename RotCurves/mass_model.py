@@ -3,47 +3,106 @@ import logging
 
 from RotCurves.dm_halos import alhpaNFWHalo
 from RotCurves.baryons import FreemanDisk, SersicProfile, GaussianRingProfile, LightFreemanDiskProfile, LightSersicProfile, LightGaussianRingProfile
-from RotCurves.dm_halos import NFWHalo, BurkertHalo, EinastoHalo, DekelZhaoHalo
+from RotCurves.dm_halos import halo_selector
 
 # Define the logger
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger('RotCurves')
 
 
-def create_components(include_halo=False, include_disk=False, include_ring=False, include_bulge=False,
-                      z=None, halo_profile='NFW', logM_vir=None, c=None, alpha=1., beta=3., gamma=1., AC=False,
-                      logM_baryon=None, DT=None, disk_re=None, disk_n=1.0, disk_q=0.2, disk_lw=True,
-                      BT=None, bulge_n=4.0, bulge_q=1.0, bulge_lw=False,
-                      ring_rpeak=None, ring_FWHM=None, ring_lw=False):
+def create_components(
+        include_halo=False,
+        include_disk=False,
+        include_ring=False,
+        include_bulge=False,
+        z=None,
+        halo_profile='NFW',
+        logM_vir=None,
+        c=None,
+        alpha=1.,
+        beta=3.,
+        gamma=1.,
+        AC=False,
+        logM_baryon=None,
+        DT=None,
+        disk_re=None,
+        disk_n=1.0,
+        disk_q=0.2,
+        disk_lw=False,
+        BT=None,
+        bulge_n=4.0,
+        bulge_q=1.0,
+        bulge_lw=False,
+        ring_rpeak=None,
+        ring_FWHM=None,
+        ring_lw=False):
     """
-    :param mass_components_switches: dictionary of component switches    [halo, disk, ring, bulge]
-    :param z: redshift
-    :param halo_profile: type of halo to use                    [NFW (default), Burkert, Einasto, Dekel-Zhao]
-    :param logM_vir: log virial mass                            [Msol]
-    :param c: halo concentration parameter                      [dimless]
-    :param alpha: halo inner slope                              [def = 1]
-    :param beta: halo outer slope                               [def = 3]
-    :param gamma: halo transition between slopes                [def = 1]
-    :param AC: include adiabatic contraction                    [True / False]
-    :param logM_baryon: log baryonic mass                       [Msol]
-    :param DT: disk-to-total ratio                              [dimless]
-    :param disk_re: disk effective radius                       [kpc]
-    :param disk_n: disk Sersic index                            [def 1.0]
-    :param disk_q: disk axis-ratio                              [def 0.2]
-    :param disk_lw: whether to apply light weighting            [True / False]
-    :param BT: bulge-to-total ratio                             [dimless]
-    :param bulge_n: bulge Sersic index                          [def 4.0]
-    :param bulge_q: bulge axis ratio                            [def 1.0 - spherical]
-    :param bulge_lw: whether to apply light weighting           [True / False]
-    :param ring_rpeak: ring peak radius                         [kpc]
-    :param ring_FWHM: Full-width half-maximum of Gaussian ring  [kpc]
-    :param ring_re: ring effective radius                       [kpc]
-    :param ring_invh: ring_Rpeak / ring_FWHM                    [dimless]
-    :param ring_lw: whether to apply light weighting            [True / False]
-    :param apply2D: use a 2D grid for the RC                    [True / False]
-    :param running_in_cluster: if running in CCA cluster        [True / False]
+    Create mass model components (halo, disk, ring, bulge) for galaxy rotation curve modeling.
 
-    :return: disk, bulge, halo Objects
+    Parameters
+    ----------
+    include_halo : bool, optional
+        Whether to include a dark matter halo component. Default is False.
+    include_disk : bool, optional
+        Whether to include a disk component. Default is False.
+    include_ring : bool, optional
+        Whether to include a ring component. Default is False.
+    include_bulge : bool, optional
+        Whether to include a bulge component. Default is False.
+    z : float, optional
+        Redshift used for halo calculations. Default is None.
+    halo_profile : str, optional
+        Type of halo profile to use. Options: 'NFW', 'Burkert', 'Einasto', 'Dekel-Zhao'.
+        Default is 'NFW'.
+    logM_vir : float, optional
+        Logarithm of virial halo mass in solar masses. Required if include_halo=True.
+    c : float, optional
+        Halo concentration parameter. Required if include_halo=True.
+    alpha : float, optional
+        Halo inner slope parameter (for alpha-NFW and Dekel-Zhao profiles). Default is 1.0.
+    beta : float, optional
+        Unused parameter (kept for backward compatibility). For Dekel-Zhao, use 'g' instead.
+    gamma : float, optional
+        Unused parameter (kept for backward compatibility). For Dekel-Zhao, use 'b' instead.
+    AC : bool, optional
+        Whether to include adiabatic contraction (not yet implemented). Default is False.
+    logM_baryon : float, optional
+        Logarithm of total baryonic mass in solar masses. Required for baryonic components.
+    DT : float, optional
+        Disk-to-total baryonic mass ratio. Default is None.
+    disk_re : float, optional
+        Disk effective radius in kpc. Required if include_disk=True or disk_lw=True.
+    disk_n : float, optional
+        Disk Sersic index. Default is 1.0 (exponential disk).
+    disk_q : float, optional
+        Disk axis ratio (0 < q <= 1). Default is 0.2.
+    disk_lw : bool, optional
+        Whether to create a light-weighted disk (zero mass). Default is False.
+    BT : float, optional
+        Bulge-to-total baryonic mass ratio. Default is None.
+    bulge_n : float, optional
+        Bulge Sersic index. Default is 4.0 (de Vaucouleurs profile).
+    bulge_q : float, optional
+        Bulge axis ratio (0 < q <= 1). Default is 1.0 (spherical).
+    bulge_lw : bool, optional
+        Whether to create a light-weighted bulge (zero mass). Default is False.
+    ring_rpeak : float, optional
+        Ring peak radius in kpc. Required if include_ring=True or ring_lw=True.
+    ring_FWHM : float, optional
+        Full-width half-maximum of Gaussian ring in kpc. Required if include_ring=True or ring_lw=True.
+    ring_lw : bool, optional
+        Whether to create a light-weighted ring (zero mass). Default is False.
+
+    Returns
+    -------
+    dict
+        Dictionary containing mass components with keys: 'halo', 'disk', 'ring', 'bulge'.
+        Components that are not created will be None.
+
+    Notes
+    -----
+    Mass ratios (BT, DT) are automatically clipped to the range [0, 1] to avoid
+    numerical issues. The ring-to-total ratio (RT) is calculated as RT = 1 - BT - DT.
     """
 
     halo = None
@@ -51,15 +110,19 @@ def create_components(include_halo=False, include_disk=False, include_ring=False
     ring = None
     bulge = None
 
-    BT = np.clip(BT, 1e-2, 1-1e-2) if BT is not None else None
-    DT = np.clip(DT, 1e-2, 1-1e-2) if DT is not None else None
+    # Clip mass ratios to valid range, handling None values
+    BT = np.clip(BT, 0., 1.) if BT is not None else 0.0
+    DT = np.clip(DT, 0., 1.) if DT is not None else 0.0
 
     if include_disk:
         if include_ring:
-            RT = 1 - BT - DT
+            RT = np.clip(1 - BT - DT, 0., 1.)
         else:
             RT = 0.
-            DT = 1 - BT
+            if BT is None:
+                DT = 1.0
+            else:
+                DT = 1 - BT
     else:
         DT = 0.
         if include_ring:
@@ -71,54 +134,93 @@ def create_components(include_halo=False, include_disk=False, include_ring=False
         else:
             RT = 0.
 
-    if include_ring and BT == 0:
-        logM_ring_tmp = logM_baryon + np.log10(RT)
-        ring_tmp = GaussianRingProfile(mass=np.power(10, logM_ring_tmp),
-                                  r_s=ring_rpeak,
-                                  FWHM_ring=ring_FWHM,
-                                  mass_to_light=float(ring_lw))
-        # TODO: add the method of finding the minimal bulge to the GaussianRingProfile class
-        # ring_tmp.find_minimal_bulge()
-        # BT = ring_tmp.BT_min
-        # include_bulge = True
-
+    # Check for negative mass ratios and warn
     if RT < 0:
-        logger.warning('Mass components: Negative ring mass with: BT=%0.2f, DT=%0.2f, RT=%0.2f' % (BT, DT, RT))
+        logger.warning(
+            f'Mass components: Negative ring mass with: BT={BT:.2f}, DT={DT:.2f}, RT={RT:.2f}')
 
     if DT < 0:
-        logger.warning('Mass components: Negative disk mass with: BT=%0.2f, DT=%0.2f, RT=%0.2f' % (BT, DT, RT))
+        logger.warning(
+            f'Mass components: Negative disk mass with: BT={BT:.2f}, DT={DT:.2f}, RT={RT:.2f}')
 
+    # Create halo component
     if include_halo:
-        halo = alhpaNFWHalo(z=z,
-                            mass=np.power(10, logM_vir),
-                            concentration=c,
-                            alpha=alpha,
-                            adiabatic_contraction=AC)
+        if logM_vir is None:
+            raise ValueError("logM_vir must be provided when include_halo=True")
+        if c is None:
+            raise ValueError("c (concentration) must be provided when include_halo=True")
+        
+        # Prepare halo kwargs - only pass relevant parameters
+        halo_kwargs = {
+            'z': z if z is not None else 0.0,
+            'mass': np.power(10, logM_vir),
+            'concentration': c,
+            'adiabatic_contraction': AC
+        }
+        
+        # Add profile-specific parameters
+        if halo_profile.lower() in ['alpha-nfw', 'alpha_nfw', 'alphanfw']:
+            halo_kwargs['alpha'] = alpha
+        elif halo_profile.lower() in ['dekel-zhao', 'dekel_zhao', 'dekelzhao', 'dz']:
+            halo_kwargs['alpha'] = alpha
+            halo_kwargs['beta'] = beta
+            halo_kwargs['gamma'] = gamma
+        halo = halo_selector(component_type=halo_profile, **halo_kwargs)
 
+    # Create disk component
     if include_disk:
-        logM_disk = logM_baryon + np.log10(DT)
+        if logM_baryon is None:
+            raise ValueError("logM_baryon must be provided when include_disk=True")
+        if disk_re is None:
+            raise ValueError("disk_re must be provided when include_disk=True")
+        if DT is None or DT < 0:
+            raise ValueError("DT must be provided and > 0 when include_disk=True")
+        
+        logM_disk = logM_baryon + np.log10(DT) if DT > 0 else -np.inf
         disk = SersicProfile(mass=np.power(10, logM_disk),
                             r_eff=disk_re,
                             n=disk_n,
                             q0=disk_q,
                             mass_to_light=float(disk_lw))
-    if not include_disk:
-        if disk_lw:
-            disk = LightSersicProfile(r_eff=disk_re,
-                                      n=disk_n)
+    elif disk_lw:
+        # Create light-weighted disk (zero mass)
+        if disk_re is None:
+            raise ValueError("disk_re must be provided when disk_lw=True")
+        disk = LightSersicProfile(r_eff=disk_re, n=disk_n)
 
+    # Create ring component
     if include_ring:
-        logM_ring = logM_baryon + np.log10(RT)
+        if logM_baryon is None:
+            raise ValueError("logM_baryon must be provided when include_ring=True")
+        if ring_rpeak is None:
+            raise ValueError("ring_rpeak must be provided when include_ring=True")
+        if ring_FWHM is None:
+            raise ValueError("ring_FWHM must be provided when include_ring=True")
+        if RT < 0:
+            raise ValueError("Ring-to-total ratio RT must be > 0 when include_ring=True. "
+                           f"Current RT={RT:.3f} (BT={BT:.3f}, DT={DT:.3f})")
+        
+        logM_ring = logM_baryon + np.log10(RT) if RT > 0 else -np.inf
         ring = GaussianRingProfile(mass=np.power(10, logM_ring),
                                   r_s=ring_rpeak,
                                   FWHM_ring=ring_FWHM,
                                   mass_to_light=float(ring_lw))
-    if not include_ring:
-        if ring_lw:
-            ring = LightGaussianRingProfile(r_s=ring_rpeak, FWHM_ring=ring_FWHM)
+    elif ring_lw:
+        # Create light-weighted ring (zero mass)
+        if ring_rpeak is None:
+            raise ValueError("ring_rpeak must be provided when ring_lw=True")
+        if ring_FWHM is None:
+            raise ValueError("ring_FWHM must be provided when ring_lw=True")
+        ring = LightGaussianRingProfile(r_s=ring_rpeak, FWHM_ring=ring_FWHM)
 
+    # Create bulge component
     if include_bulge:
-        logM_bulge = logM_baryon + np.log10(BT)
+        if logM_baryon is None:
+            raise ValueError("logM_baryon must be provided when include_bulge=True")
+        if BT is None or BT < 0:
+            raise ValueError("BT must be provided and > 0 when include_bulge=True")
+        
+        logM_bulge = logM_baryon + np.log10(BT) if BT > 0 else -np.inf
         bulge = SersicProfile(mass=np.power(10, logM_bulge),
                              r_eff=1.,
                              n=bulge_n,

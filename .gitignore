@@ -1,0 +1,15 @@
+./venv/
+venv/
+/venv/
+venv*
+.idea/
+.env
+
+docs/build/
+docs/_build/
+__pycache__/
+*.egg*
+# RotCurves.egg-info/
+
+./calcs.py
+calcs.py

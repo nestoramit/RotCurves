@@ -1,16 +1,19 @@
-from time import time_ns
 import numpy as np
-import astropy.constants as c
-from astropy.cosmology import Planck18
 from scipy.special import j0, j1
-# from scipy.integrate import quad
 import warnings
 import logging
 
-from RotCurves.base_utils import integrate_quad_list, solve_numerical_using_brentq
+from RotCurves.base_utils import (
+    integrate_quad_list,
+    solve_numerical_using_brentq,
+    safe_sqrt,
+    safe_round_to_zero,
+)
+from RotCurves.const import (
+    G_CONST,
+    COSMOLOGY,
+)
 
-# Define constants as global variables
-G_CONST = c.G.to('kpc km2 / (s2 Msun)').value
 
 # Define the logger
 logging.basicConfig(level=logging.INFO)
@@ -176,10 +179,13 @@ class SurfaceDensityProfile:
 
     def _normalized_radius(self, r):
         """Return the dimensionless radius :math:`x = |r| / r_s`."""
-        return np.abs(r) / self.r_s
+        x = np.abs(r) / self.r_s
+        x = safe_round_to_zero(x)
+        # x[np.abs(x) < 1e-10] = 0.0
+        return x
 
     def _calculate_scale_radius_from_effective(self):
-        """
+        r"""
         Infer :math:`r_s` from :math:`r_\mathrm{eff}` by solving the half-mass
         condition in dimensionless form.
 
@@ -201,7 +207,7 @@ class SurfaceDensityProfile:
         return solve_numerical_using_brentq(func, p0=self.r_eff)
 
     def _calculate_effective_radius_from_scale(self):
-        """
+        r"""
         Infer :math:`r_\mathrm{eff}` from :math:`r_s` by solving the half-mass
         condition in dimensionless form.
 
@@ -235,7 +241,7 @@ class SurfaceDensityProfile:
         float
             Surface density normalization :math:`\Sigma_0` [:math:`M_\odot \, kpc^{-2}`].
         """
-        return self.mass / (2 * np.pi * self.r_s ** 2 * self.menc_dimless(np.inf))[0]
+        return self.mass / (2 * np.pi * self.r_s ** 2 * self.menc_dimless(np.inf)).item()
 
     def _scale_intensity(self):
         r"""
@@ -373,6 +379,8 @@ class SurfaceDensityProfile:
             :math:`f_{M}(<x)`.
         """
         mass = integrate_quad_list(lambda t: t * self.surface_density_dimless(t), 0, x)
+        # mass[np.abs(mass) < 1e-10] = 0.0
+        mass = safe_round_to_zero(mass)
         return mass
 
     def menc(self, r):
@@ -450,8 +458,11 @@ class SurfaceDensityProfile:
         ndarray or float
             :math:`v_c^2(r)` [:math:`\mathrm{km}^2 \, \mathrm{s}^{-2}`].
         """
-        x = self._normalized_radius(r)
-        return self.vcirc2_dimless(x) * self.scale_velocity**2
+        if not self._is_massive():
+            return np.zeros_like(r)
+        else:
+            x = self._normalized_radius(r)
+            return self.vcirc2_dimless(x) * self.scale_velocity**2
 
     def vcirc_dimless(self, x):
         r"""
@@ -471,7 +482,8 @@ class SurfaceDensityProfile:
         ndarray or float
             :math:`f_{v}(x)`.
         """
-        return np.sqrt(np.maximum(self.vcirc2_dimless(x), 0))
+        return safe_sqrt(self.vcirc2_dimless(x))
+        # return np.sqrt(np.maximum(self.vcirc2_dimless(x), 0))
 
     def vcirc(self, r):
         r"""
@@ -491,8 +503,11 @@ class SurfaceDensityProfile:
         ndarray or float
             Circular velocity [:math:`\mathrm{km} \, \mathrm{s}^{-1}`].
         """
-        x = self._normalized_radius(r)
-        return self.vcirc_dimless(x) * self.scale_velocity
+        if not self._is_massive():
+            return np.zeros_like(r)
+        else:
+            x = self._normalized_radius(r)
+            return self.vcirc_dimless(x) * self.scale_velocity * np.sign(r)
 
     def light_profile(self, r, r2=None):
         r"""
@@ -696,7 +711,7 @@ class DarkMatterHaloProfile:
             self.z = 0
 
         # Set the critical density of the Universe at redshift z
-        self.rho_crit = Planck18.critical_density(self.z).to('Msun / kpc3').value
+        self.rho_crit = COSMOLOGY.critical_density(self.z).to('Msun / kpc3').value
 
         # Set the default density function to NFW if not provided (e.g., Navarro+1995)
         if density_function is None:
@@ -705,7 +720,7 @@ class DarkMatterHaloProfile:
         # Calculate missing parameters from the given ones
         # parameters: c, r_s, r_vir, scale_density, virial_overdensity
         class _ParameterSolver:
-            """
+            r"""
             Helper class to infer missing halo parameters from any two given values.
 
             Methods map a pair of known parameters to the remaining three using
@@ -839,8 +854,22 @@ class DarkMatterHaloProfile:
 
     def _normalized_radius(self, r):
         """Return the dimensionless radius :math:`x = |r|/r_s`."""
-        return np.abs(r) / self.r_s
+        x = np.abs(r) / self.r_s
+        x = safe_round_to_zero(x)
+        # x[np.abs(x) < 1e-10] = 0.0
+        return x
 
+    def _is_massive(self):
+        """
+        Return whether the component carries positive mass.
+
+        Returns
+        -------
+        bool
+            True if ``mass > 0``.
+        """
+        return self.mass > 0.
+    
     def _scale_mass(self):
         r"""
         Compute the mass scaling factor :math:`M_s`.
@@ -915,6 +944,8 @@ class DarkMatterHaloProfile:
             :math:`f_M(<x)`, shape compatible with ``np.atleast_1d(x)``.
         """
         mass = integrate_quad_list(lambda t: 3 * t ** 2 * self._density_dimless(t), 0, x)
+        mass = safe_round_to_zero(mass)
+        # mass[mass < 1e-10] = 0.0
         return mass
 
     def menc(self, r):
@@ -977,8 +1008,11 @@ class DarkMatterHaloProfile:
         ndarray or float
             :math:`v_c^2(r)` [:math:`\mathrm{km}^2\,\mathrm{s}^{-2}`].
         """
-        x = self._normalized_radius(r)
-        return self._vcirc2_dimless(x) * self.scale_velocity ** 2
+        if not self._is_massive():
+            return np.zeros_like(r)
+        else:
+            x = self._normalized_radius(r)
+            return self._vcirc2_dimless(x) * self.scale_velocity ** 2
 
     def _vcirc_dimless(self, x):
         r"""
@@ -990,7 +1024,7 @@ class DarkMatterHaloProfile:
             :math:`f_v(x) = \sqrt{f_v^2(x)}` with negative values clipped to zero
             before the square root to avoid NaNs.
         """
-        return np.sqrt(np.maximum(self._vcirc2_dimless(x), 0))
+        return safe_sqrt(self._vcirc2_dimless(x))
 
     def vcirc(self, r):
         r"""
@@ -1010,343 +1044,8 @@ class DarkMatterHaloProfile:
         ndarray or float
             Circular velocity [:math:`\mathrm{km}\,\mathrm{s}^{-1}`].
         """
-        x = self._normalized_radius(r)
-        return self._vcirc_dimless(x) * self.scale_velocity
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# class SurfaceDensityProfile:
-#     def __init__(self, mass, r_eff=None, r_s=None, surface_density_function=None,
-#                  q0=0., mass_to_light=1., verbose=False):
-#         self.mass = mass
-#         self.r_eff = r_eff
-#         self.r_s = r_s
-#         self.q0 = q0
-#         self.mass_to_light = mass_to_light
-#         self.verbose = verbose
-#
-#         # Set the default surface density function to an exponential "Freeman Disk" if not provided (e.g., Freeman+1970)
-#         if surface_density_function is None:
-#             self.surface_density_function = self._default_surface_density_function
-#         else:
-#             self.surface_density_function = surface_density_function
-#
-#         # Handle cases where both radii are given
-#         if self.r_eff is not None and self.r_s is not None:
-#             warnings.warn("Both r_eff and r_s are given. Using r_s.", UserWarning)
-#         elif self.r_s is None and self.r_eff is not None:
-#             self.r_s = self._calculate_scale_radius_from_effective()
-#         elif self.r_eff is None and self.r_s is not None:
-#             self.r_eff = self._calculate_effective_radius_from_scale()
-#         else:
-#             raise ValueError("Either r_s or r_eff must be provided.")
-#
-#         self.scale_density = self._scale_density()
-#         self.scale_mass = self._scale_mass()
-#         self.scale_velocity = self._scale_velocity()
-#
-#     def _default_surface_density_function(self, r):
-#         # Default exponential Freeman Disk surface density profile
-#         x = self._normalized_radius(r)
-#         return np.exp(-x)
-#
-#     def _normalized_radius(self, r):
-#         # Normalized radius x = r / r_s
-#         return np.abs(r) / self.r_s
-#
-#     def _calculate_scale_radius_from_effective(self):
-#         # Placeholder formula to convert effective radius to scale radius
-#         func = lambda r_s: self.menc_dimless(self.r_eff / r_s) - 0.5 * self.menc_dimless(np.inf)
-#         return solve_numerical_using_brentq(func, p0=self.r_eff)
-#
-#     def _calculate_effective_radius_from_scale(self):
-#         # Placeholder formula to convert scale radius to effective radius
-#         func = lambda r_eff: self.menc_dimless(r_eff / self.r_s) - 0.5 * self.menc_dimless(np.inf)
-#         # func = lambda r_eff: self.menc_dimless(r_eff / self.r_s) - 0.5 * self.menc_dimless(3*self.r_s)
-#         return solve_numerical_using_brentq(func, p0=self.r_s)
-#
-#     def _scale_density(self):
-#         # Placeholder for scale density calculation
-#         return self.mass / (2 * np.pi * self.r_s ** 2 * self.menc_dimless(np.inf))[0]
-#
-#     def _scale_intensity(self):
-#         # Placeholder for scale intensity calculation
-#         if self.mass == 0.:
-#             return 1.
-#         else:
-#             return self.scale_density * self.mass_to_light
-#
-#     def _scale_mass(self):
-#         # Placeholder for scale mass calculation
-#         return 2 * np.pi * self.scale_density * self.r_s**2
-#
-#     def _scale_velocity(self):
-#         # Use the global G_CONST
-#         return np.sqrt(G_CONST * self.scale_mass / self.r_s)
-#
-#     def _is_massive(self):
-#         # Check if the mass is massive
-#         return self.mass > 0.
-#
-#     def surface_density_dimless(self, x):
-#         return self.surface_density_function(x)
-#
-#     def surface_density(self, r):
-#         x = self._normalized_radius(r)
-#         return self.surface_density_dimless(x) * self.scale_density
-#
-#     def menc_dimless(self, x):
-#         # Integration using scipy.quad
-#         mass = integrate_quad_list(lambda t: t * self.surface_density_dimless(t), 0, x)
-#         return mass
-#
-#     def menc(self, r):
-#         x = self._normalized_radius(r)
-#         return self.menc_dimless(x) * self.scale_mass
-#
-#     def vcirc2_dimless(self, x):
-#         # Velocity calculation using enclosed mass
-#         return np.divide(self.menc_dimless(x), x, out=np.zeros_like(x), where=x!=0)
-#
-#     def vcirc2(self, r):
-#         x = self._normalized_radius(r)
-#         return self.vcirc2_dimless(x) * self.scale_velocity**2
-#
-#     def vcirc_dimless(self, x):
-#         """
-#         Calculate the circular velocity for an array of dimensionless radii `x`.
-#         Negative vcirc2 values are set to zero to avoid NaNs.
-#         """
-#
-#         return np.sqrt(np.maximum(self.vcirc2_dimless(x), 0))
-#
-#     def vcirc(self, r):
-#         x = self._normalized_radius(r)
-#         return self.vcirc_dimless(x) * self.scale_velocity
-#
-#     def light_profile(self, r, r2=None):
-#         scale_intensity = self._scale_intensity()
-#         x = self._normalized_radius(r)
-#         if r2 is None:
-#             lprof = self.surface_density_dimless(x)
-#         else:
-#             x2 = self._normalized_radius(r2)
-#             lprof = self.surface_density_dimless(np.sqrt(x**2 + x2**2))
-#
-#         return scale_intensity * lprof
-#
-#     def dlnrho_dlnr(self, r):
-#         """
-#         Calculate the logarithmic density slope at radius r.
-#         Used in calculations of the pressure support (e.g., Burkert+2010)
-#         """
-#         x = self._normalized_radius(r)
-#         dlnrho_dlnr = np.gradient(np.log(self.surface_density_dimless(x)), np.log(x))
-#         return dlnrho_dlnr
-#
-# class DarkMatterHaloProfile:
-#
-#     def __init__(self, mass, z=None, r_vir=None, r_s=None, concentration=None, scale_density=None,
-#                  virial_overdensity=200, density_function=None, adiabatic_contraction=False):
-#         self.z = z
-#         self.mass = mass
-#         self.r_vir = r_vir
-#         self.r_s = r_s
-#         self.c = concentration
-#         self.scale_density = scale_density
-#         self.virial_overdensity = virial_overdensity
-#         self.density_function = density_function
-#         self.adiabatic_contraction = adiabatic_contraction
-#
-#         # Set the default redshift to 0 if not provided
-#         if z is None:
-#             self.z = 0
-#
-#         # Set the critical density of the Universe at redshift z
-#         self.rho_crit = Planck18.critical_density(self.z).to('Msun / kpc3').value
-#
-#         # Set the default density function to NFW if not provided (e.g., Navarro+1995)
-#         if density_function is None:
-#             self.density_function = self._default_density_function
-#
-#         # Calculate missing parameters from the given ones
-#         # parameters: c, r_s, r_vir, scale_density, virial_overdensity
-#         class _ParameterSolver:
-#             def __init__(self, outer_self):
-#                 self.mass = outer_self.mass
-#                 self.rho_crit = outer_self.rho_crit
-#                 self.menc_dimless = outer_self._menc_dimless
-#                 # Map of combinations to calculation functions
-#                 self.method_map = {
-#                     ('c', 'r_s'): self.calculate_from_c_rs,
-#                     ('c', 'r_vir'): self.calculate_from_c_rvir,
-#                     ('c', 'scale_density'): self.calculate_from_c_scale_density,
-#                     ('c', 'virial_overdensity'): self.calculate_from_c_virial_overdensity,
-#                     ('r_vir', 'r_s'): self.calculate_from_rvir_rs,
-#                     ('r_vir', 'scale_density'): self.calculate_from_rvir_scale_density,
-#                     ('r_s', 'scale_density'): self.calculate_from_rs_scale_density,
-#                     ('r_s','virial_overdensity'): self.calculate_from_rs_virial_overdensity,
-#                     ('scale_density', 'virial_overdensity'): self.calculate_from_scale_density_virial_overdensity,
-#                     }
-#
-#             def calculate(self, **kwargs):
-#                 """
-#                 Calculate the three missing parameters given two known ones.
-#                 """
-#                 # Extract given and missing parameter names
-#                 given = {k: v for k, v in kwargs.items() if v is not None}
-#                 missing = [k for k, v in kwargs.items() if v is None]
-#
-#                 # Check if exactly two values are given
-#                 if len(given) != 2 or len(missing) != 3:
-#                     raise ValueError("Exactly two parameters must be given and two must be None.")
-#
-#                 # Sort the given keys to match the method map
-#                 given_keys = tuple(sorted(given.keys()))
-#
-#                 # Find the appropriate calculation function
-#                 try:
-#                     func = self.method_map[given_keys]
-#                 except KeyError:
-#                     raise ValueError(f"No calculation method for given pair: {given_keys}")
-#
-#                 # Calculate the missing values
-#                 results = func(*given.values())
-#
-#                 # Build the complete result dictionary
-#                 result_dict = {**given, **dict(zip(missing, results))}
-#                 return result_dict
-#
-#             # Calculation functions for each pair
-#             def calculate_from_c_rs(self, c, r_s):
-#                 r_vir = c * r_s
-#                 virial_overdensity = self.mass / (4/3 * np.pi * r_vir**3 * self.rho_crit)
-#                 scale_density = c**3 / self.menc_dimless(c) * virial_overdensity * self.rho_crit
-#                 return r_vir, scale_density, virial_overdensity
-#
-#             def calculate_from_c_rvir(self, c, r_vir):
-#                 r_s = r_vir / c
-#                 virial_overdensity = self.mass / (4/3 * np.pi * r_vir**3 * self.rho_crit)
-#                 scale_density = c**3 / self.menc_dimless(c) * virial_overdensity * self.rho_crit
-#                 return r_s, scale_density, virial_overdensity
-#
-#             def calculate_from_c_scale_density(self, c, scale_density):
-#                 virial_overdensity = scale_density/self.rho_crit * self.menc_dimless(c)/c**3
-#                 r_vir = (3 * self.mass / (4 * np.pi * virial_overdensity * self.rho_crit))**(1/3)
-#                 r_s = r_vir / c
-#                 return r_s, r_vir, virial_overdensity
-#
-#             def calculate_from_c_virial_overdensity(self, c, virial_overdensity):
-#                 r_vir = (3 * self.mass / (4 * np.pi * virial_overdensity * self.rho_crit))**(1/3)
-#                 r_s = r_vir / c
-#                 scale_density = c**3 / self.menc_dimless(c) * virial_overdensity * self.rho_crit
-#                 return r_s, r_vir, scale_density
-#
-#             def calculate_from_rvir_rs(self, r_vir, r_s):
-#                 c = r_vir / r_s
-#                 virial_overdensity = self.mass / (4/3 * np.pi * r_vir**3 * self.rho_crit)
-#                 scale_density = c**3 / self.menc_dimless(c) * virial_overdensity * self.rho_crit
-#                 return c, scale_density, virial_overdensity
-#
-#             def calculate_from_rvir_scale_density(self, r_vir, scale_density):
-#                 virial_overdensity = self.mass / (4 / 3 * np.pi * r_vir ** 3 * self.rho_crit)
-#                 c = solve_numerical_using_brentq(lambda c: scale_density - c**3/self.menc_dimless(c)*virial_overdensity*self.rho_crit, p0=5)
-#                 r_s = r_vir / c
-#                 return c, r_s, virial_overdensity
-#
-#             def calculate_from_rs_scale_density(self, r_s, scale_density):
-#                 func = lambda c: scale_density - c**3/self.menc_dimless(c) * (self.mass / (4/3*np.pi * (c*r_s)**3))
-#                 c = solve_numerical_using_brentq(func, p0=5)
-#                 r_vir = c * r_s
-#                 virial_overdensity = self.mass / (4/3 * np.pi * r_vir**3 * self.rho_crit)
-#                 return c, r_vir, virial_overdensity
-#
-#             def calculate_from_rs_virial_overdensity(self, r_s, virial_overdensity):
-#                 r_vir = (3 * self.mass / (4 * np.pi * virial_overdensity * self.rho_crit))**(1/3)
-#                 c = r_vir / r_s
-#                 scale_density = c**3 / self.menc_dimless(c) * virial_overdensity * self.rho_crit
-#                 return c, r_vir, scale_density
-#
-#             def calculate_from_scale_density_virial_overdensity(self, scale_density, virial_overdensity):
-#                 r_vir = (3 * self.mass / (4 * np.pi * virial_overdensity * self.rho_crit))**(1/3)
-#                 c = solve_numerical_using_brentq(lambda c: scale_density - c**3/self.menc_dimless(c) * virial_overdensity * self.rho_crit, p0=5)
-#                 r_s = r_vir / c
-#                 return c, r_s, r_vir
-#         parameters = _ParameterSolver(self).calculate(c=concentration, r_s=r_s, r_vir=r_vir, scale_density=scale_density,
-#                                                       virial_overdensity=virial_overdensity)
-#         self.c = float(parameters['c'])
-#         self.r_s = float(parameters['r_s'])
-#         self.r_vir = float(parameters['r_vir'])
-#         self.scale_density = float(parameters['scale_density'])
-#         self.virial_overdensity = float(parameters['virial_overdensity'])
-#
-#         # Calculate the scale density, mass, and velocity
-#         self.scale_mass = self._scale_mass()
-#         self.scale_velocity = self._scale_velocity()
-#
-#     def _default_density_function(self, x):
-#         return x**-1 * (1 + x)**-2
-#
-#     def _normalized_radius(self, r):
-#         return np.abs(r) / self.r_s
-#
-#     def _scale_mass(self):
-#         return 4/3 * np.pi * self.scale_density * self.r_s ** 3
-#
-#     def _scale_velocity(self):
-#        return np.sqrt(G_CONST * self.scale_mass / self.r_s)
-#
-#     def _density_dimless(self, x):
-#         return self.density_function(x)
-#
-#     def density(self, r):
-#         x = self._normalized_radius(r)
-#         return self._density_dimless(x) * self.scale_density
-#
-#     def _menc_dimless(self, x):
-#         mass = integrate_quad_list(lambda t: 3 * t ** 2 * self._density_dimless(t), 0, x)
-#         return mass
-#
-#     def menc(self, r):
-#         x = self._normalized_radius(r)
-#         return self._menc_dimless(x) * self.scale_mass
-#
-#     def _vcirc2_dimless(self, x):
-#         return np.divide(self._menc_dimless(x), x, out=np.zeros_like(x), where=x != 0)
-#
-#     def vcirc2(self, r):
-#         x = self._normalized_radius(r)
-#         return self._vcirc2_dimless(x) * self.scale_velocity ** 2
-#
-#     def _vcirc_dimless(self, x):
-#         return np.sqrt(np.maximum(self._vcirc2_dimless(x), 0))
-#
-#     def vcirc(self, r):
-#         x = self._normalized_radius(r)
-#         return self._vcirc_dimless(x) * self.scale_velocity
+        if not self._is_massive():
+            return np.zeros_like(r)
+        else:
+            x = self._normalized_radius(r)
+            return self._vcirc_dimless(x) * self.scale_velocity * np.sign(r)

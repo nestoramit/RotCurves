@@ -5,7 +5,6 @@ import numpy as np
 from astropy.cosmology import Planck18
 import datetime
 
-# from RotCurves.mcmc_fitter import Prior
 from RotCurves.base_utils import create_r_space
 from RotCurves.rotation_curve import calculate_fraction_at_re
 from RotCurves.mass_model import create_components
@@ -199,7 +198,7 @@ class GalaxyObject:
                 self.obsdata_path = os.path.join(self.obsdata_dir,
                                                  self.name[:self.name.find('-')] + "_flux.obs_prof.txt")
             self.obsdata = pd.read_csv(os.path.join(self.obsdata_path), sep=r'\t', header=None, engine='python',
-                                       names=['r ["]', "V", "V_err", "disp", "disp_err", "flux", "flux_err"])
+                                       names=['r', "V", "V_err", "disp", "disp_err", "flux", "flux_err"])
 
         self.obsdata_r = np.asarray(self.obsdata['r']) * self.kpc_to_arcsec  # Convert arcsec to kpc
         self.obsdata_V = np.asarray(self.obsdata['V'])

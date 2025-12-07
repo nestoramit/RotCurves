@@ -1,144 +1,11 @@
 import numpy as np
-from astropy.units.quantity_helper.function_helpers import solve
 from scipy.integrate import quad
 from scipy.optimize import brentq
-from scipy.special import gammainc, gamma
-import seaborn as sns
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 from matplotlib.ticker import MultipleLocator
 from concurrent.futures import ThreadPoolExecutor
-from time import time_ns
 
-"""
-Plotting
-"""
-# ------------------------------------ Functions for plotting ------------------------------------
-
-colors_list = sns.color_palette('deep', n_colors=10)
-colors = {
-    'blue': colors_list[0],
-    'orange': colors_list[1],
-    'green': colors_list[2],
-    'red': colors_list[3],
-    'purple': colors_list[4],
-    'brown': colors_list[5],
-    'pink': colors_list[6],
-    'grey': colors_list[7],
-    'beige': colors_list[8],
-    'teal': colors_list[9],
-}
-
-def make_pretty_plot(dpi=600):
-    """
-    Use first thing after setting up the plt.figure() to make things pretty.
-    """
-    mpl.rcParams["figure.dpi"] = dpi
-
-    mpl.rcParams['xtick.labelsize'] = 12
-    mpl.rcParams['xtick.top'] = True
-    mpl.rcParams['xtick.bottom'] = True
-    mpl.rcParams['xtick.minor.visible'] = True
-    mpl.rcParams['xtick.major.top'] = True
-    mpl.rcParams['xtick.minor.top'] = True
-    mpl.rcParams['xtick.major.bottom'] = True
-    mpl.rcParams['xtick.minor.bottom'] = True
-    mpl.rcParams['xtick.direction'] = 'in'
-
-    mpl.rcParams['ytick.labelsize'] = 12
-    mpl.rcParams['ytick.right'] = True
-    mpl.rcParams['ytick.left'] = True
-    mpl.rcParams['ytick.minor.visible'] = True
-    mpl.rcParams['ytick.major.right'] = True
-    mpl.rcParams['ytick.minor.right'] = True
-    mpl.rcParams['ytick.major.left'] = True
-    mpl.rcParams['ytick.minor.left'] = True
-    mpl.rcParams['ytick.direction'] = 'in'
-
-    mpl.rcParams['legend.frameon'] = False
-
-def figure(ncols=1, nrows=1, axwidth=3, axheight=None, padx=0., pady=0., height_ratios=None, width_ratios=None,
-           add_title_space=False, sharex='none', sharey='none'):
-    if axheight is None:
-        axheight = axwidth
-
-    if height_ratios is None:
-        height_ratios = np.ones(nrows)
-    if width_ratios is None:
-        width_ratios = np.ones(ncols)
-    gridspec = dict(hspace=pady, wspace=padx, height_ratios=height_ratios, width_ratios=width_ratios)
-
-    height = nrows * axheight + (nrows-1) * pady + 0.
-    height *= np.sum(height_ratios) / nrows
-    if add_title_space:
-        height += 1.
-
-    width = ncols * axwidth + (ncols-1) * padx + 0.
-    width *= np.sum(width_ratios) / ncols
-
-    figsize = (width, height)
-
-    fig, axes = plt.subplots(nrows=nrows, ncols=ncols, figsize=figsize, sharex=sharex, sharey=sharey, gridspec_kw=gridspec)
-
-    return fig, axes
-
-
-def organize_plot(ax, title=None, title_size=14, show_grid=False, grid_size=None, legend_location=None, legend_size=6,
-                  xlims=None, ylims=None, xticks=None, xticks_rotation=None, yticks_rotation=None, yticks=None, xticks_size=None, yticks_size=None,
-                  xlabel=None, xlabel_pad=4., xlabel_size=12, xlabel_rotation=0, ylabel=None, ylabel_pad=4., ylabel_size=12, ylabel_rotation=0, xlabel_color=None, ylabel_color=None,
-                  xscale=None, yscale=None, ticks_inside=False, ticks_length=None, ticks_width=None):
-    if title is not None:
-        ax.set_title(title, fontsize=title_size)
-    if show_grid:
-        ax.grid(True)
-        if grid_size is not None:
-            ax.grid(which="major", linewidth=grid_size[0])
-            ax.grid(which="minor", linewidth=grid_size[1])
-    if legend_location is not None:
-        ax.legend(loc=legend_location, fontsize=legend_size)
-    if xlabel is not None:
-        ax.set_xlabel(xlabel, fontsize=xlabel_size, rotation=xlabel_rotation, labelpad=xlabel_pad)
-    if ylabel is not None:
-        ax.set_ylabel(ylabel, fontsize=ylabel_size, rotation=90 - ylabel_rotation, labelpad=ylabel_pad)
-    if xlims is not None:
-        ax.set_xlim(xlims[0], xlims[1])
-    if ylims is not None:
-        ax.set_ylim(ylims[0], ylims[1])
-    if xticks is not None:
-        ax.xaxis.set_major_locator(MultipleLocator(xticks[0]))
-        if len(xticks) > 1:
-            ax.xaxis.set_minor_locator(MultipleLocator(xticks[1]))
-    if yticks is not None:
-        ax.yaxis.set_major_locator(MultipleLocator(yticks[0]))
-        if len(yticks) > 1:
-            ax.yaxis.set_minor_locator(MultipleLocator(yticks[1]))
-    if xticks_size is not None:
-        plt.xticks(fontsize=xticks_size)
-    if yticks_size is not None:
-        plt.yticks(fontsize=yticks_size)
-    if xlabel_color is not None:
-        ax.xaxis.label.set_color(xlabel_color)
-        ax.tick_params(axis='x', colors=xlabel_color)
-    if ylabel_color is not None:
-        ax.yaxis.label.set_color(ylabel_color)
-        ax.tick_params(axis='y', colors=ylabel_color)
-    if xscale is not None:
-        ax.set_xscale(xscale)
-    if yscale is not None:
-        ax.set_yscale(yscale)
-    if xticks_rotation is not None:
-        ax.tick_params(axis='x', labelrotation=xticks_rotation)
-    if yticks_rotation is not None:
-        ax.tick_params(axis='y', labelrotation=yticks_rotation)
-    if ticks_inside:
-        ax.tick_params(which='both', direction='in')
-    if ticks_length is not None:
-        ax.minorticks_on()
-        ax.tick_params(which='major', length=ticks_length[0])
-        ax.tick_params(which='minor', length=ticks_length[1])
-    if ticks_width is not None:
-        ax.tick_params(which='major', width=ticks_width[0])
-        ax.tick_params(which='minor', width=ticks_width[1])
 
 def integrate_quad_list(func, a, b):
     """
@@ -260,10 +127,82 @@ def create_r_space(edge, resolution):
 
     return R
 
-if __name__ == '__main__':
+def create_r_space_oversampled(edge, resolution, oversample):
+        """
+        Create a radial space array that ensures perfect divisibility by oversample factor.
+        
+        This method modifies the standard create_r_space behavior to ensure that
+        the resulting array length is always divisible by the oversample factor,
+        eliminating the need for interpolation during rebinning.
+        
+        Parameters
+        ----------
+        edge : float
+            Maximum radius for the array [kpc].
+        resolution : float
+            Spatial resolution (pixel size) [kpc].
+        oversample : int
+            Oversampling factor.
+            
+        Returns
+        -------
+        ndarray
+            Radial array with length divisible by oversample factor.
+            
+        Notes
+        -----
+        For even oversample factors:
+            - Expands the lower edge by oversample/2 points
+            - Shifts the entire array by oversample*dx/2 to maintain symmetry
+            
+        For odd oversample factors:
+            - Expands both edges by floor(oversample/2) points
+            - Maintains symmetry around the original array
+        """
+        
+        # Create the original array to understand the target structure
+        original_array = create_r_space(edge=edge, resolution=resolution)
+        original_length = len(original_array)
+        
+        if oversample == 1:
+            # No oversampling, use standard function
+            return original_array
+                
+        if oversample % 2 == 0:
+            # Even oversample: expand lower edge and shift
+            lower_points = oversample // 2
+            lower_edge = - (edge + resolution * lower_points) 
+            
+            upper_points = oversample // 3
+            upper_edge = edge + resolution * upper_points
+            R = np.arange(start=lower_edge, stop=upper_edge+resolution, step=resolution)
 
-    n = 4.
-    func = lambda x: gammainc(2*n, x) - 0.5
-    start = time_ns()
-    print(solve_numerical_using_brentq(func, p0=1e4, N=100))
-    print(f"{time_ns() - start} ns")
+            shift = resolution / 2
+            R = R + shift
+            return R
+                        
+        else:
+            # Odd oversample: expand both edges symmetrically
+            lower_points = upper_points = oversample // 2
+            lower_edge = - (edge + resolution * lower_points) 
+            upper_edge = edge + resolution * upper_points
+            R = np.arange(start=lower_edge, stop=upper_edge+resolution, step=resolution)
+
+            return R
+        
+        # Verify the result is divisible by oversample
+        if len(R) % oversample != 0:
+            logger.warning(f"Created array length {len(R)} is not divisible by oversample {oversample}")
+        
+        return R
+
+def safe_sqrt(squared, sign_array=None):
+    sgn = np.sign(sign_array) if sign_array is not None else 1.
+    return np.sqrt(np.maximum(0, squared)) * sgn
+
+def safe_round_to_zero(array, atol=1e-10):
+    if np.isscalar(array):
+        return 0. if np.isclose(array, 0., atol=atol) else array
+    else:
+        array[np.isclose(array, 0., atol=atol)] = 0.
+        return array
